@@ -9,7 +9,7 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -17,15 +17,39 @@ from app.core.db import obtener_sesion
 from app.core.enums import RolUsuario
 from app.core.seguridad import crear_token_acceso, hashear_clave
 from app.main import app
-from app.models import Base
-from app.usuarios.models import EspacioAcademico, Usuario
+from app.models import (
+    Base,
+    CasoEstudio,
+    Convocatoria,
+    EspacioAcademico,
+    Notificacion,
+    Participacion,
+    Rubrica,
+    Sesion,
+    Usuario,
+)
 
 URL_PG = os.getenv("URL_BD_PRUEBAS")
 CLAVE_PRUEBA = "ClaveSegura123"
 
+# Tablas que SQLite puede crear (las demás usan JSONB o funciones de PostgreSQL)
+TABLAS_SQLITE = [
+    m.__table__
+    for m in (
+        Usuario,
+        EspacioAcademico,
+        CasoEstudio,
+        Rubrica,
+        Sesion,
+        Convocatoria,
+        Participacion,
+        Notificacion,
+    )
+]
+
 
 @pytest.fixture
-def sesion():
+def fabrica_sesion():
     if URL_PG:
         motor = create_engine(URL_PG)
         tablas = None  # todas
@@ -33,14 +57,23 @@ def sesion():
         motor = create_engine(
             "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
         )
-        tablas = [Usuario.__table__, EspacioAcademico.__table__]
+
+        @event.listens_for(motor, "connect")
+        def _funciones_postgres(conexion, _):
+            conexion.create_function("char_length", 1, len)
+
+        tablas = TABLAS_SQLITE
 
     Base.metadata.create_all(motor, tables=tablas)
-    fabrica = sessionmaker(bind=motor, autoflush=False, expire_on_commit=False)
-    with fabrica() as s:
-        yield s
+    yield sessionmaker(bind=motor, autoflush=False, expire_on_commit=False)
     Base.metadata.drop_all(motor, tables=tablas)
     motor.dispose()
+
+
+@pytest.fixture
+def sesion(fabrica_sesion):
+    with fabrica_sesion() as s:
+        yield s
 
 
 @pytest.fixture
