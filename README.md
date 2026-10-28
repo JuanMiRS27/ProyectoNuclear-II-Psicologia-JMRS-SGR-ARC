@@ -14,6 +14,7 @@ docker compose up --build
 - API: http://localhost:8000
 - Documentación interactiva (Swagger): http://localhost:8000/docs
 - Estado: http://localhost:8000/health
+- Bandeja de correos de desarrollo (Mailpit): http://localhost:8025
 
 Al arrancar, el contenedor del backend aplica las migraciones (`alembic upgrade head`).
 El código de `backend/` está montado como volumen y el servidor se recarga solo al guardar.
@@ -60,6 +61,28 @@ backend/
 | `ServicioCorreo` (Adapter) | `app/notificaciones/correo.py` |
 | `PublicadorEventos`, `ObservadorEvento` (Observer) | `app/notificaciones/eventos.py` |
 | `obtener_sesion()` (sesión de BD por petición) | `app/core/db.py` |
+
+### Cómo publicar un evento (Dev 3)
+
+Publicar siempre **después** del `commit`, porque los observadores leen con su propia sesión:
+
+```python
+from app.notificaciones.eventos import EventoAcademico, TipoEvento, publicador_eventos
+
+sesion.commit()
+publicador_eventos.publicar(EventoAcademico(TipoEvento.SESION_PROGRAMADA, sesion_academica.id))
+publicador_eventos.publicar(
+    EventoAcademico(
+        TipoEvento.ESTUDIANTES_MODIFICADOS,
+        sesion_academica.id,
+        {"convocatoria_ids": [str(c.id) for c in nuevas]},
+    )
+)
+publicador_eventos.publicar(EventoAcademico(TipoEvento.CALIFICACION_REGISTRADA, participacion.id))
+publicador_eventos.publicar(EventoAcademico(TipoEvento.RETROALIMENTACION_REGISTRADA, participacion.id))
+```
+
+Cada correo enviado queda registrado en la tabla `notificacion`.
 
 ## Reglas del equipo
 
