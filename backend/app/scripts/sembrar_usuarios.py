@@ -2,8 +2,9 @@
 
 Uso:  docker compose exec backend python -m app.scripts.sembrar_usuarios
 
-Es idempotente: si un correo ya existe, lo deja como está. Las claves se
-leen de las variables SEMILLA_* del .env (ver .env.example).
+Es idempotente: si un correo ya existe, lo deja como está. Correos y claves
+se pueden cambiar con las variables SEMILLA_* del .env; si no están definidas
+se usan los mismos valores de prueba de .env.example.
 """
 
 import os
@@ -21,20 +22,20 @@ def _usuarios_semilla() -> list[dict]:
         {
             "nombre_completo": "Administrador de Prueba",
             "correo": os.getenv("SEMILLA_ADMIN_CORREO", "admin@simulador.edu.co"),
-            "clave": os.environ["SEMILLA_ADMIN_CLAVE"],
+            "clave": os.getenv("SEMILLA_ADMIN_CLAVE", "Admin.Prueba2026"),
             "rol": RolUsuario.ADMINISTRADOR,
         },
         {
             "nombre_completo": "Docente de Prueba",
             "correo": os.getenv("SEMILLA_DOCENTE_CORREO", "docente@simulador.edu.co"),
-            "clave": os.environ["SEMILLA_DOCENTE_CLAVE"],
+            "clave": os.getenv("SEMILLA_DOCENTE_CLAVE", "Docente.Prueba2026"),
             "rol": RolUsuario.DOCENTE,
             "puede_crear_casos": True,
         },
         {
             "nombre_completo": "Estudiante de Prueba",
             "correo": os.getenv("SEMILLA_ESTUDIANTE_CORREO", "estudiante@simulador.edu.co"),
-            "clave": os.environ["SEMILLA_ESTUDIANTE_CLAVE"],
+            "clave": os.getenv("SEMILLA_ESTUDIANTE_CLAVE", "Estudiante.Prueba2026"),
             "rol": RolUsuario.ESTUDIANTE,
             "codigo_institucional": "EST-0001",
         },
