@@ -14,7 +14,7 @@ class Configuracion(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
 
-    jwt_secreto: str = "cambiar-en-produccion"
+    jwt_secreto: str = "solo-para-desarrollo-cambiar-en-produccion"
     jwt_algoritmo: str = "HS256"
     jwt_minutos_expiracion: int = 60
 

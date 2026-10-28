@@ -10,7 +10,9 @@ from sqlalchemy.orm import mapped_column
 
 UUIDPk = Annotated[
     uuid.UUID,
-    mapped_column(primary_key=True, server_default=text("gen_random_uuid()")),
+    mapped_column(
+        primary_key=True, default=uuid.uuid4, server_default=text("gen_random_uuid()")
+    ),
 ]
 
 FechaCreacion = Annotated[

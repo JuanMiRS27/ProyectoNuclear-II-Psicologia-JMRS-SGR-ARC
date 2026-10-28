@@ -21,8 +21,10 @@ class Usuario(Base):
     clave_hash: Mapped[str] = mapped_column(String(255))
     rol: Mapped[RolUsuario] = mapped_column(enum_pg(RolUsuario, "rol_usuario"))
     codigo_institucional: Mapped[str | None] = mapped_column(String(30), unique=True)
-    puede_crear_casos: Mapped[bool] = mapped_column(Boolean, server_default="false")
-    activo: Mapped[bool] = mapped_column(Boolean, server_default="true")
+    puede_crear_casos: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    activo: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     creado_en: Mapped[FechaCreacion]
 
 
@@ -35,5 +37,5 @@ class EspacioAcademico(Base):
     id: Mapped[UUIDPk]
     nombre: Mapped[str] = mapped_column(String(150))
     periodo: Mapped[str] = mapped_column(String(10))
-    activo: Mapped[bool] = mapped_column(Boolean, server_default="true")
+    activo: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     creado_en: Mapped[FechaCreacion]
