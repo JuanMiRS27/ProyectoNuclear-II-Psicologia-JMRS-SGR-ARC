@@ -1,1 +1,65 @@
-# ProyectoNuclear-II-Psicologia-JMRS-SGR-ARC
+# Proyecto Nuclear II · Simulador de Psicología Social
+
+Backend del simulador en **FastAPI + SQLAlchemy 2 + Alembic + PostgreSQL 16**, dockerizado.
+
+## Arranque rápido
+
+Requisito: Docker Desktop.
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+- API: http://localhost:8000
+- Documentación interactiva (Swagger): http://localhost:8000/docs
+- Estado: http://localhost:8000/health
+
+Al arrancar, el contenedor del backend aplica las migraciones (`alembic upgrade head`).
+El código de `backend/` está montado como volumen y el servidor se recarga solo al guardar.
+
+## Comandos útiles
+
+```bash
+# Pruebas
+docker compose exec backend pytest
+
+# Nueva migración después de cambiar modelos
+docker compose exec backend alembic revision --autogenerate -m "descripcion"
+
+# Consola de PostgreSQL
+docker compose exec db psql -U simulador -d simulador
+```
+
+## Estructura
+
+```
+backend/
+├── app/
+│   ├── core/            # configuración, BD, enums, dependencias compartidas
+│   ├── usuarios/        # Dev 1 · usuario, espacio_academico
+│   ├── notificaciones/  # Dev 1 · notificacion, Adapter (correo), Observer (eventos)
+│   ├── casos/           # Dev 2 · caso_estudio, escenario, pregunta, opcion, rubrica, criterio_rubrica
+│   ├── sesiones/        # Dev 3 · sesion, convocatoria
+│   ├── participacion/   # Dev 3 · participacion, respuesta
+│   ├── evaluacion/      # Dev 3 · Strategy de evaluación
+│   ├── models.py        # registro de los 13 modelos para Alembic
+│   └── main.py
+├── alembic/             # migraciones
+└── tests/
+```
+
+## Contratos compartidos
+
+| Contrato | Ubicación |
+|---|---|
+| `get_current_user()`, `require_rol(*roles)` | `app/core/deps.py` |
+| `ServicioCorreo` (Adapter) | `app/notificaciones/correo.py` |
+| `PublicadorEventos`, `ObservadorEvento` (Observer) | `app/notificaciones/eventos.py` |
+| `obtener_sesion()` (sesión de BD por petición) | `app/core/db.py` |
+
+## Reglas del equipo
+
+- Cada dev trabaja en su rama y abre PR hacia `develop`.
+- Commits en español con prefijo de tipo: `feat`, `fix`, `build`, `chore`, `docs`, `test`, `refactor`.
+- Antes de crear una migración: `git pull` de `develop`. No modificar migraciones ajenas ya fusionadas.
