@@ -21,6 +21,9 @@ El código de `backend/` está montado como volumen y el servidor se recarga sol
 ## Comandos útiles
 
 ```bash
+# Usuarios de prueba (admin, docente y estudiante; credenciales en .env)
+docker compose exec backend python -m app.scripts.sembrar_usuarios
+
 # Pruebas
 docker compose exec backend pytest
 
