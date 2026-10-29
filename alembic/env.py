@@ -6,6 +6,7 @@ from alembic import context
 from app.core.config import get_settings
 from app.core.database import Base
 from app.modules.auth import models  # noqa: F401  (registra los modelos en Base.metadata)
+from app.modules.cases import models as cases_models  # noqa: F401
 
 config = context.config
 

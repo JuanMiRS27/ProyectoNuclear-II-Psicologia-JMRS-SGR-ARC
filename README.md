@@ -1,6 +1,6 @@
-# Simulador de Psicología Social — Backend
+# Iter Animi — Simulador de Psicología Social (Backend)
 
-Monolito modular en **FastAPI + PostgreSQL**. Estado actual: **Módulo 1 — Autenticación y Gestión de Usuarios**.
+Monolito modular en **FastAPI + PostgreSQL**. Estado actual: **Módulo 1 — Autenticación y Gestión de Usuarios** (aprobado) y **Módulo 2 — Gestión de Casos Académicos** (en revisión).
 
 | Componente | Versión |
 |---|---|
@@ -73,6 +73,8 @@ alembic downgrade base    # revertir todo
 |---|---|
 | `0001_usuario` | Tipo `rol_usuario`, tabla `usuario`, restricciones e índice. |
 | `0002_version_token` | Columna `usuario.version_token INTEGER NOT NULL DEFAULT 0` + `CHECK (version_token >= 0)`. Las filas existentes quedan en 0. Los JWT emitidos antes de aplicarla no llevan el claim `ver` y dejan de ser válidos: los usuarios deben iniciar sesión de nuevo. |
+| `0003_casos` | Módulo 2: tipo `estado_caso`, tablas `caso_estudio`, `escenario`, `pregunta`, `opcion`, `rubrica`, `criterio_rubrica`, sus restricciones e índices, y el disparador `trg_pregunta_criterio_mismo_caso`. No modifica `usuario`. |
+| `0004_tiempo_max_240` | Sustituye `ck_caso_estudio_tiempo_positivo` por `ck_caso_estudio_tiempo_en_rango` (`tiempo_estimado_min BETWEEN 1 AND 240`). Si algún caso supera 240 minutos, se detiene sin modificar datos. |
 
 ### 4. Administrador inicial
 
@@ -208,8 +210,302 @@ Todas las dependencias consultan el estado **actual** del usuario en la base de 
 | Permisos adicionales además de `puede_crear_casos` | El modelo solo tiene ese booleano. Si los módulos posteriores necesitan más permisos, convendría decidir entre más columnas o una tabla de permisos. |
 | Retención del permiso al desactivar | Desactivar a un docente no revoca `puede_crear_casos`; lo conserva al reactivarse. Confirmar si es lo deseado. |
 
+## Módulo 2: Gestión de Casos Académicos
+
+Los docentes con el permiso `puede_crear_casos` diseñan casos como borradores, los validan y los publican.
+Este módulo solo define y administra el contenido académico. Sesiones, participaciones, calificación y notificaciones
+corresponden a módulos posteriores.
+
+### Estructura
+
+```text
+app/modules/cases/
+├── models/        # ORM: CasoEstudio, Escenario, Pregunta, Opcion, Rubrica, CriterioRubrica, EstadoCasoEnum
+├── schemas/       # Pydantic: creación / actualización / respuesta; resultado de validación
+├── repositories/  # CasoRepository (raíz del agregado) y ContenidoCasoRepository (componentes)
+├── services/      # CasoService, EscenarioService, PreguntaService, OpcionService, RubricaService
+├── routers/       # Endpoints REST (sin lógica de negocio ni SQL)
+├── builders/      # Patrón Builder
+├── validators/    # Patrón Chain of Responsibility
+├── states/        # Patrón State
+├── dsl/           # CaseDSL 1.0: esquema y exportación
+└── dependencies/  # Política de acceso (reutiliza DocenteUser y CaseCreator del módulo 1)
+```
+
+### Modelo relacional
+
+| Tabla | Columnas | Integridad |
+|---|---|---|
+| `caso_estudio` | `id`, `autor_id`, `nombre`, `desarrollo_situacional`, `historia`, `tiempo_estimado_min`, `estado`, `creado_en`, `actualizado_en` | FK `usuario` ON DELETE RESTRICT; `nombre` no vacío; `tiempo` entre 1 y 240 (o nulo en borrador); si `estado <> 'BORRADOR'`, los datos generales son obligatorios; índice `(autor_id, estado)` |
+| `escenario` | `id`, `caso_id`, `orden`, `titulo`, `contexto` | FK caso ON DELETE CASCADE; `UNIQUE (caso_id, orden) DEFERRABLE`; `orden >= 1` |
+| `pregunta` | `id`, `escenario_id`, `criterio_id`, `orden`, `enunciado` | FK escenario CASCADE; FK criterio **ON DELETE SET NULL** (nulo permitido en borrador); `UNIQUE (escenario_id, orden) DEFERRABLE`; disparador de coherencia de criterio |
+| `opcion` | `id`, `pregunta_id`, **`orden`**, `texto`, `es_correcta`, `justificacion` | FK pregunta CASCADE; `UNIQUE (pregunta_id, orden) DEFERRABLE` |
+| `rubrica` | `id`, `caso_id`, `escala_max NUMERIC(4,2)` | `UNIQUE (caso_id)`: una rúbrica por caso; `escala_max > 0` |
+| `criterio_rubrica` | `id`, `rubrica_id`, `descripcion`, `peso NUMERIC(5,2)`, `niveles JSONB` | FK rúbrica CASCADE; `0 < peso <= 100`; `jsonb_typeof(niveles) = 'array'` |
+
+Correspondencia entre reglas del dominio y restricciones de PostgreSQL:
+
+| Regla | API (Pydantic) | Publicación (cadena) | PostgreSQL |
+|---|---|---|---|
+| Tiempo estimado 1–240 min | `ge=1, le=240` | `CASO_TIEMPO_REQUERIDO` / `CASO_TIEMPO_FUERA_DE_RANGO` | `ck_caso_estudio_tiempo_en_rango` (nulo permitido en borrador) |
+| Peso en (0, 100], 2 decimales | `gt=0, le=100`, `max_digits=5`, `decimal_places=2` | `CRITERIO_PESO_INVALIDO`; suma = 100 | `ck_criterio_rubrica_peso_en_rango` + `NUMERIC(5,2)` |
+| Escala máxima > 0 | `gt=0`, `NUMERIC(4,2)` | `RUBRICA_ESCALA_INVALIDA` | `ck_rubrica_escala_positiva` |
+| Una rúbrica por caso | — | — | `uq_rubrica_caso_id` |
+| Orden único y ≥ 1 | `ge=1` | órdenes consecutivos | `uq_*_orden` (DEFERRABLE) + `ck_*_orden_positivo` |
+| Criterio de la misma rúbrica | verificación en servicio (400) | `PREGUNTA_CRITERIO_AJENO` | disparador `trg_pregunta_criterio_mismo_caso` |
+| Datos generales completos fuera de BORRADOR | — | `CASO_*_VACIO`, `CASO_TIEMPO_REQUERIDO` | `ck_caso_estudio_publicado_con_datos_generales` |
+| Niveles como arreglo | lista de `NivelSchema` | `CRITERIO_NIVELES_FORMATO_INVALIDO` | `ck_criterio_rubrica_niveles_es_arreglo` |
+
+La sumatoria de pesos, la existencia de opciones correctas o de justificaciones no se imponen en la BD: dependen de
+varias filas y de la completitud, y un borrador debe poder guardarse incompleto.
+
+- **Borradores:** la base de datos solo impone la integridad que ningún borrador debe romper. Un caso sin escenarios, una pregunta sin criterio, una opción sin justificación o un criterio sin niveles se pueden guardar. La completitud se exige al publicar.
+- **`trg_pregunta_criterio_mismo_caso`:** impide asociar una pregunta a un criterio de la rúbrica de otro caso. Comprueba tres tablas, así que no puede ser un `CHECK`. El servicio lo verifica antes y devuelve un 400 legible; el disparador es la garantía final.
+- **Restricciones de orden `DEFERRABLE`:** al reordenar se difieren al `COMMIT`, de modo que un intercambio (1↔2) no viola la unicidad a mitad de la transacción. Tras una eliminación, los hermanos se renumeran 1..n.
+- **Eliminación física:** solo de borradores. Ningún borrador puede estar vinculado todavía a una sesión, porque solo los casos publicados serán seleccionables.
+
+### Patrones de diseño
+
+**Builder** (`builders/`) construye un caso completo:
+
+| Participante | Clase | Responsabilidad |
+|---|---|---|
+| Abstracción | `ConstructorCaso` | Declara los pasos: datos generales, escenario, pregunta, opción, rúbrica, criterio y `construir()`. |
+| Constructor concreto | `ConstructorCasoAcademico` | Exige la secuencia válida de pasos, numera órdenes, permite referenciar criterios por clave antes de declararlos y los resuelve al construir (rechaza claves desconocidas o repetidas), y fija siempre `BORRADOR`. No usa la sesión de BD. |
+| Director | `ServicioConstruccionCaso` | Recorre un documento CaseDSL e invoca los pasos en orden. |
+| Producto | `CasoAcademico` | Agregado transitorio (raíz `CasoEstudio` con todo enlazado). |
+
+`CasoService.crear_completo` persiste el producto con un solo `add` en cascada dentro de una transacción. Si cualquier
+INSERT falla, el rollback no deja escenarios, preguntas ni rúbricas a medias; las pruebas lo verifican con un fallo
+simulado y con una violación real de `UNIQUE`. La edición individual (endpoints de escenarios, preguntas, opciones
+y rúbrica) no pasa por el Builder: modifica componentes de un borrador existente.
+
+**Chain of Responsibility** (`validators/`) valida antes de publicar:
+
+`ValidadorDatosCaso → ValidadorEscenariosYPreguntas → ValidadorOpciones → ValidadorRubrica`
+
+Es la variante acumulativa: cada eslabón registra sus inconsistencias en un `ResultadoValidacion` compartido y siempre
+delega en el siguiente, así que se devuelven todos los errores y no solo el primero. La cadena no modifica nada y es la
+misma para `/validate` y `/publish`. Formato de respuesta:
+
+```json
+{
+  "valido": false,
+  "errores": [
+    {
+      "codigo": "OPCION_SIN_JUSTIFICACION",
+      "componente": "opcion",
+      "componente_id": "3f6c…",
+      "campo": "justificacion",
+      "ruta": "escenarios[1].preguntas[0].opciones[2].justificacion",
+      "mensaje": "La opción 3 de la pregunta 1 del escenario 2 no tiene justificación."
+    }
+  ]
+}
+```
+
+`componente_id` identifica la entidad exacta y `ruta` su posición, para que un frontend señale qué corregir.
+
+**State** (`states/`) gestiona el ciclo de vida:
+
+| Estado | Editar contenido | Eliminar | Publicar | Archivar | Seleccionable para sesiones (módulo 3) |
+|---|---|---|---|---|---|
+| `EstadoBorrador` | Sí | Sí | Sí, si la cadena no devuelve errores | No (409) | No |
+| `EstadoPublicado` | No (409) | No (409) | No (409) | Sí | Sí (`admite_programacion()`) |
+| `EstadoArchivado` | No (409) | No (409) | No (409) | No (409) | No |
+
+`CicloVidaCaso` es el contexto: elige la clase de estado según `caso.estado` y delega en ella. Así los servicios no
+contienen `if estado == ...`. Colaboración al publicar:
+
+1. `CasoService.publicar` bloquea la fila del caso (`SELECT … FOR UPDATE`) y carga su contenido.
+2. Llama a `CicloVidaCaso(caso).publicar(validar)`, donde `validar` es una función que ejecuta la cadena.
+3. Solo `EstadoBorrador` invoca esa función. Los demás estados responden 409 sin validar, de modo que State no duplica la validación.
+4. Si hay errores se lanza 422 con la lista y el caso permanece en BORRADOR.
+5. Si no los hay, el estado pasa a PUBLICADO y la transacción se confirma.
+
+**Concurrencia:** toda escritura sobre un caso o su contenido bloquea primero la fila del caso. Una edición y una
+publicación simultáneas se ejecutan en serie, y dos publicaciones simultáneas producen un 200 y un 409. Una prueba de
+control demuestra que, sin el bloqueo, un caso publicado llegaría a modificarse.
+
+### CaseDSL 1.0
+
+Representación declarativa en JSON (camelCase), usada para importar (`POST /cases/full`) y exportar (`GET /cases/{id}/dsl`):
+
+```json
+{
+  "dslVersion": "1.0",
+  "caso": {"nombre": "…", "desarrolloSituacional": "…", "historia": "…", "tiempoEstimadoMin": 45},
+  "escenarios": [
+    {"titulo": "…", "contexto": "…", "preguntas": [
+      {"enunciado": "…", "criterio": "ANALISIS", "opciones": [
+        {"texto": "…", "esCorrecta": true, "justificacion": "…"}
+      ]}
+    ]}
+  ],
+  "rubrica": {"escalaMax": "5.00", "criterios": [
+    {"clave": "ANALISIS", "descripcion": "…", "peso": "60.00", "niveles": [
+      {"nombre": "Insuficiente", "valor": "1.00", "minAciertosPct": "0.00"}
+    ]}
+  ]}
+}
+```
+
+- El orden de los arreglos es el orden académico.
+- Las preguntas referencian criterios por `clave`. La BD no guarda claves, así que al exportar se generan como `C1..Cn`.
+- La exportación incluye `id` y `caso.estado` como información; al importar se ignoran y el caso siempre nace en BORRADOR.
+- **Dos validaciones distintas:**
+  - el esquema Pydantic de la DSL valida la estructura (tipos, longitudes, versión, claves únicas, referencias existentes) y responde 422 sin persistir nada;
+  - la cadena valida la completitud para publicar.
+
+  Un documento estructuralmente válido puede describir un borrador incompleto.
+- **Una sola fuente de verdad:** la DSL no se almacena. PostgreSQL es la persistencia y la DSL se genera desde él en cada exportación. Las pruebas comprueban la ida y vuelta (importar → exportar → reimportar).
+
+### Decimales y niveles
+
+- `peso` y `escala_max` son `NUMERIC` en PostgreSQL y `Decimal` en Python. La suma de pesos se compara con `Decimal("100.00")`: por ejemplo, 33.33 + 33.33 + 33.34 da exactamente 100.
+- Las respuestas JSON devuelven los decimales como texto con dos decimales (`"40.00"`) para no perder precisión en el cliente. Se aceptan como número o como texto, con hasta 2 decimales.
+- Los niveles se guardan en JSONB como números, consultables desde SQL. El tipo `NivelesJSONB` los reconstruye como `Decimal` al leer. La conversión es exacta porque los valores tienen como máximo 4 dígitos y 2 decimales.
+- Estructura de un nivel, según el JSON Schema de CaseDSL:
+  - `nombre` y `valor`: obligatorios;
+  - `minAciertosPct` (`min_aciertos_pct` en la API REST y en JSONB): opcional.
+
+  Este módulo no calcula calificaciones; eso corresponde al módulo 5.
+
+### Reglas de publicación
+
+| Validador | Código | Regla |
+|---|---|---|
+| Datos | `CASO_NOMBRE_VACIO`, `CASO_DESARROLLO_SITUACIONAL_VACIO`, `CASO_HISTORIA_VACIA` | Textos generales obligatorios |
+| | `CASO_TIEMPO_REQUERIDO`, `CASO_TIEMPO_FUERA_DE_RANGO` | Tiempo obligatorio, entre 1 y 240 minutos |
+| Escenarios y preguntas | `CASO_SIN_ESCENARIOS`, `ESCENARIO_SIN_PREGUNTAS` | Al menos un escenario y al menos una pregunta por escenario |
+| | `ESCENARIO_TITULO_VACIO`, `ESCENARIO_CONTEXTO_VACIO`, `PREGUNTA_ENUNCIADO_VACIO` | Contenido obligatorio |
+| | `ESCENARIO_ORDEN_INVALIDO`, `PREGUNTA_ORDEN_INVALIDO` | Órdenes consecutivos desde 1 |
+| Opciones | `PREGUNTA_OPCIONES_INSUFICIENTES` | Al menos 2 opciones |
+| | `PREGUNTA_SIN_OPCION_CORRECTA` | Al menos una opción correcta (se admiten varias, incluso todas) |
+| | `OPCION_TEXTO_VACIO`, `OPCION_SIN_JUSTIFICACION` | Texto y justificación en cada opción |
+| Rúbrica | `CASO_SIN_RUBRICA`, `RUBRICA_SIN_CRITERIOS`, `RUBRICA_ESCALA_INVALIDA` | Existe una rúbrica, con criterios y escala > 0 |
+| | `CRITERIO_DESCRIPCION_VACIA`, `CRITERIO_PESO_INVALIDO`, `RUBRICA_PESOS_NO_SUMAN_100` | Criterios válidos cuyos pesos suman exactamente 100 |
+| | `CRITERIO_NIVELES_INSUFICIENTES`, `CRITERIO_NIVELES_FORMATO_INVALIDO`, `NIVEL_NOMBRE_DUPLICADO` | Al menos 2 niveles (JSON Schema de CaseDSL), bien formados y con nombres únicos |
+| | `PREGUNTA_SIN_CRITERIO` | Cada pregunta está asociada a un criterio existente |
+| | `PREGUNTA_CRITERIO_AJENO` | El criterio pertenece a la rúbrica del mismo caso |
+
+Un criterio puede no tener preguntas asociadas: el caso sigue siendo publicable si cumple las demás reglas.
+
+#### Reglas retiradas en la revisión del módulo 2
+
+| Código retirado | Motivo |
+|---|---|
+| `CASO_TIEMPO_INSUFICIENTE` (≥ 1 min por pregunta) | No forma parte de los requerimientos. |
+| `CASO_TIEMPO_FUERA_DE_RANGO` con máximo 480 | El modelo establece un máximo de 240 minutos (ahora se aplica también en API y BD). |
+| `CRITERIO_SIN_PREGUNTAS` | No está establecida y puede impedir configuraciones contempladas en los ejemplos del proyecto. |
+| `PREGUNTA_SIN_OPCION_INCORRECTA` | No se exige una opción incorrecta. |
+| `OPCION_TEXTO_DUPLICADO` | Regla añadida que no figuraba entre las reglas originales de opciones. |
+| `NIVEL_UMBRAL_DUPLICADO`, `CRITERIO_SIN_NIVEL_BASE`, `NIVEL_VALOR_FUERA_DE_ESCALA`, `NIVELES_NO_MONOTONOS` | Son reglas de calificación: se pospusieron para definirlas con el módulo 5. |
+
+#### Niveles de rúbrica: qué se valida y qué se pospone
+
+| Permanece (estructura) | Dónde |
+|---|---|
+| `niveles` es un arreglo JSON | CHECK de PostgreSQL |
+| `nombre` y `valor` son obligatorios; `minAciertosPct` es opcional; no se admiten otros campos | Esquema Pydantic / JSON Schema de CaseDSL |
+| `nombre` no vacío (máx. 80); `valor` ≥ 0 con 2 decimales (máx. 99.99); `minAciertosPct`, si se indica, entre 0 y 100 con 2 decimales | Esquema Pydantic |
+| Al menos **2 niveles** por criterio, con nombres no repetidos | Cadena de publicación (un borrador puede tener menos) |
+
+| Se pospone al módulo 5 (Evaluación) | Pregunta que deberá responderse |
+|---|---|
+| Interpretación de `minAciertosPct` | ¿Es el porcentaje mínimo de aciertos en las preguntas del criterio (`pregunta.criterio_id`) o en todo el caso? ¿Cómo se clasifica un nivel que no lo indica? |
+| ¿Porcentajes distintos y un nivel con 0? | ¿Cómo se clasifica un resultado que no alcanza ningún porcentaje? |
+| ¿`valor` ≤ `escala_max`? | ¿`valor` se expresa en la escala de la rúbrica o en otra unidad? |
+| ¿Monotonía porcentaje/valor? | ¿Un nivel con más aciertos puede valer menos? |
+
+El único supuesto que se mantiene sobre `minAciertosPct` es el que expresa su nombre: si se indica, es un porcentaje
+entre 0 y 100.
+
+#### Nota para el módulo 5 (Evaluación): varias opciones correctas
+
+- Una pregunta puede tener varias opciones correctas, incluso todas.
+- Esto no convierte la pregunta en selección múltiple: la participación (módulo 4) registra una sola opción por estudiante y pregunta.
+- Lo previsto es que elegir cualquier opción con `es_correcta = true` cuente como acierto. El módulo 5 debe confirmarlo y definir cómo se agrega por criterio (`pregunta.criterio_id`) usando `peso`, `niveles` y `escala_max`.
+
+### Control de acceso
+
+| Acción | Requisito |
+|---|---|
+| Crear, editar, eliminar, publicar, archivar | `CaseCreator` (docente activo con `puede_crear_casos`) y ser autor del caso |
+| Consultar, listar, validar, exportar DSL | `DocenteUser` y ser autor. Si un docente pierde el permiso, conserva la lectura de sus casos, pero no puede modificarlos. |
+| Administrador / estudiante | 403 en todos los endpoints del módulo |
+| Caso de otro docente | 404, indistinguible de un caso inexistente |
+
+`autor_id` siempre se toma del usuario autenticado. Los esquemas rechazan campos extra (`autor_id`, `estado`, …) con 422.
+
+### Endpoints del módulo 2 (`/api/v1`)
+
+| Método | Ruta | Descripción | Éxito |
+|---|---|---|---|
+| POST | `/cases` | Crear borrador | 201 |
+| POST | `/cases/full` | Construir caso completo desde CaseDSL (Builder) | 201 |
+| GET | `/cases?estado=&skip=&limit=` | Listar mis casos | 200 |
+| GET | `/cases/{id}` | Caso completo (escenarios, preguntas, opciones, rúbrica) | 200 |
+| PATCH | `/cases/{id}` | Información general (borrador) | 200 |
+| DELETE | `/cases/{id}` | Eliminar borrador | 204 |
+| POST | `/cases/{id}/validate` | Validar sin cambiar el estado | 200 |
+| POST | `/cases/{id}/publish` | Validar y publicar (422 con errores si no es válido) | 200 |
+| POST | `/cases/{id}/archive` | Archivar un caso publicado | 200 |
+| GET | `/cases/{id}/dsl` | Exportar CaseDSL 1.0 | 200 |
+| POST / GET | `/cases/{id}/scenarios` | Crear / listar escenarios | 201 / 200 |
+| PUT | `/cases/{id}/scenarios/order` | Reordenar (`{"ids": [...]}` con todos los escenarios) | 200 |
+| GET / PATCH / DELETE | `/cases/{id}/scenarios/{scenario_id}` | Consultar / modificar / eliminar escenario | 200 / 200 / 204 |
+| POST / GET | `/cases/{id}/scenarios/{scenario_id}/questions` | Crear / listar preguntas | 201 / 200 |
+| PUT | `/cases/{id}/scenarios/{scenario_id}/questions/order` | Reordenar preguntas | 200 |
+| GET / PATCH / DELETE | `/cases/{id}/questions/{question_id}` | Consultar / modificar (enunciado, `criterio_id`) / eliminar | 200 / 200 / 204 |
+| POST / GET | `/cases/{id}/questions/{question_id}/options` | Crear / listar opciones | 201 / 200 |
+| PUT | `/cases/{id}/questions/{question_id}/options/order` | Reordenar opciones | 200 |
+| PATCH / DELETE | `/cases/{id}/questions/{question_id}/options/{option_id}` | Modificar / eliminar opción | 200 / 204 |
+| POST / GET / PATCH | `/cases/{id}/rubric` | Crear (con criterios opcionales) / consultar / cambiar `escala_max` | 201 / 200 / 200 |
+| POST / GET | `/cases/{id}/rubric/criteria` | Crear / listar criterios | 201 / 200 |
+| PATCH / DELETE | `/cases/{id}/rubric/criteria/{criterion_id}` | Modificar / eliminar criterio | 200 / 204 |
+
+Errores:
+
+| Código | Significado |
+|---|---|
+| 400 | Regla de negocio: criterio de otro caso, reorden incompleto, campo obligatorio a `null` |
+| 401 | No autenticado |
+| 403 | Rol o permiso insuficiente |
+| 404 | Recurso inexistente, ajeno o que no pertenece al caso indicado |
+| 409 | Operación no permitida en el estado actual, orden ocupado, rúbrica duplicada |
+| 422 | Esquema inválido, o publicación con errores (`{detail, valido, errores}`) |
+
+### Decisiones y discrepancias documentales
+
+No tuve acceso al documento de Ingeniería de Software II ni a sus reglas OCL. Las reglas se derivaron de los requisitos
+de esta etapa y del modelo relacional; estas son las decisiones que conviene confirmar:
+
+1. **Columna `opcion.orden` (agregada al modelo).** Sin ella, el orden de presentación de las opciones sería arbitrario: UUID aleatorio y sin fecha de creación. Es una columna, no una tabla, con unicidad por pregunta.
+2. **Criterios sin columna de orden.** Se ordenan por `descripcion` (y `id`). Las claves DSL `C1..Cn` siguen ese orden.
+3. **Varias opciones correctas.** Se permiten, incluso todas; ver la nota para el módulo 5.
+4. **Niveles.**
+   - El campo de porcentaje se llama `minAciertosPct`, como en el JSON Schema del proyecto. Antes se llamaba `umbral_aciertos` y era obligatorio.
+   - Ahora es opcional, y solo `nombre` y `valor` son obligatorios.
+   - Se exigen al menos 2 niveles al publicar.
+   - Las reglas de calificación se pospusieron al módulo 5.
+   - Si alguna base de desarrollo guardó niveles con la clave anterior, esos criterios deben volver a guardarse (la validación los marca con `CRITERIO_NIVELES_FORMATO_INVALIDO`).
+5. **Tiempo estimado: 1–240 minutos.** El límite está en una sola constante, `TIEMPO_MAXIMO_MIN` en `models/caso.py`, que usan el CHECK de PostgreSQL, los esquemas y el validador. En un borrador puede quedar nulo.
+6. **Criterios sin preguntas.** Están permitidos.
+7. **Migración 0004 en lugar de editar 0003.** Como 0003 pudo haberse aplicado ya en alguna base, la corrección del CHECK va en una migración nueva. Si se confirma que nadie aplicó 0003, ambas podrían fusionarse antes del commit.
+8. **Transiciones.**
+   - `BORRADOR → ARCHIVADO` no existe: un borrador se elimina.
+   - `ARCHIVADO` es final: no hay vuelta a `PUBLICADO`.
+   - Un caso publicado no se edita. Una futura "nueva versión" debería crear un borrador nuevo, por ejemplo exportando e importando la DSL.
+9. **409 frente a 400.** Las operaciones rechazadas por el estado del caso devuelven 409 (conflicto con el estado actual del recurso). Los 400 quedan para reglas de datos.
+10. **Lectura sin permiso.** Un docente sin `puede_crear_casos` puede leer sus propios casos (los creó cuando tenía el permiso), pero no editarlos.
+11. **Administradores.** No acceden a los casos. Si necesitan supervisar el contenido, habría que definir un endpoint de solo lectura.
+12. **Cambio en `app/core/exceptions.py`.** `AppError` acepta `extra` (campos adicionales en el JSON) y se añadió `UnprocessableEntityError` (422). Es compatible hacia atrás: el módulo 1 no cambia.
+
 ## Pendiente para módulos posteriores
 
-- **Módulo 2:** creación de casos. Debe usar la dependencia `CaseCreator` / `require_case_creator`.
+- **Módulo 3:** seleccionar solo casos publicados al programar sesiones (usar `CicloVidaCaso(caso).admite_programacion()`) y añadir la FK sesión → caso con `ON DELETE RESTRICT`.
+- **Módulo 4:** una vista de caso para estudiantes **sin** `es_correcta` ni `justificacion`. `OpcionRead` es solo para autores.
+- **Módulo 5:** cálculo de calificaciones con `niveles`, `peso` y `escala_max`.
 - **Módulo 3:** acceso estudiantil con correo institucional y código de convocatoria. El rol `ESTUDIANTE` y su fila sin contraseña ya están soportados; el endpoint de acceso se añadirá en `routers/auth_router.py` usando la entidad `convocatoria`.
 - *Refresh tokens*, "cerrar todas las sesiones" a petición del usuario y limitación de intentos de login. No se pidieron en este módulo.

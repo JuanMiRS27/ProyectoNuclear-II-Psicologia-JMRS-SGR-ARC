@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.modules.auth.routers import router as auth_module_router
+from app.modules.cases.routers import router as cases_module_router
 
 
 def create_app() -> FastAPI:
@@ -19,6 +20,7 @@ def create_app() -> FastAPI:
 
     # Cada módulo aporta su router; los módulos 2-7 se registrarán aquí.
     app.include_router(auth_module_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(cases_module_router, prefix=settings.API_V1_PREFIX)
 
     @app.get("/health", tags=["Sistema"], summary="Comprobación de disponibilidad")
     def health() -> dict[str, str]:

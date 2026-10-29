@@ -5,7 +5,10 @@ registrado en `main.py` las convierte en JSON con el código HTTP adecuado.
 Los módulos posteriores pueden reutilizarlas directamente.
 """
 
+from typing import Any
+
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 
@@ -13,8 +16,10 @@ class AppError(Exception):
     status_code: int = status.HTTP_400_BAD_REQUEST
     default_detail: str = "Solicitud inválida."
 
-    def __init__(self, detail: str | None = None) -> None:
+    def __init__(self, detail: str | None = None, extra: dict[str, Any] | None = None) -> None:
         self.detail = detail or self.default_detail
+        # Campos adicionales que se agregan al cuerpo JSON (p. ej., la lista de errores de validación).
+        self.extra = extra or {}
         super().__init__(self.detail)
 
 
@@ -43,10 +48,16 @@ class ConflictError(AppError):
     default_detail = "El recurso entra en conflicto con uno existente."
 
 
+class UnprocessableEntityError(AppError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    default_detail = "El contenido no cumple las reglas requeridas."
+
+
 async def _app_error_handler(_: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AppError)
     headers = {"WWW-Authenticate": "Bearer"} if isinstance(exc, AuthenticationError) else None
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=headers)
+    content = {"detail": exc.detail, **jsonable_encoder(exc.extra)}
+    return JSONResponse(status_code=exc.status_code, content=content, headers=headers)
 
 
 def register_exception_handlers(app: FastAPI) -> None:

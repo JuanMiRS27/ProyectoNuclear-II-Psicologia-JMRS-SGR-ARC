@@ -83,7 +83,8 @@ def migrated_database() -> Iterator[None]:
 def clean_tables() -> Iterator[None]:
     yield
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE TABLE usuario"))
+        # CASCADE vacía también las tablas que dependen de usuario (casos y su contenido, módulo 2).
+        conn.execute(text("TRUNCATE TABLE usuario CASCADE"))
 
 
 @pytest.fixture
@@ -154,3 +155,30 @@ def admin_headers(client: TestClient, admin: Usuario) -> dict[str, str]:
 @pytest.fixture
 def docente_headers(client: TestClient, docente: Usuario) -> dict[str, str]:
     return bearer(login(client, docente.correo))
+
+
+# --- Módulo 2 -----------------------------------------------------------------
+
+
+@pytest.fixture
+def creador(make_user: Callable[..., Usuario]) -> Usuario:
+    """Docente con permiso para crear casos."""
+    return make_user(RolUsuario.DOCENTE, puede_crear_casos=True)
+
+
+@pytest.fixture
+def creador_headers(client: TestClient, creador: Usuario) -> dict[str, str]:
+    return bearer(login(client, creador.correo))
+
+
+@pytest.fixture
+def otro_creador_headers(client: TestClient, make_user: Callable[..., Usuario]) -> dict[str, str]:
+    otro = make_user(RolUsuario.DOCENTE, puede_crear_casos=True)
+    return bearer(login(client, otro.correo))
+
+
+@pytest.fixture
+def estudiante_headers(make_user: Callable[..., Usuario]) -> dict[str, str]:
+    # Los estudiantes aún no pueden iniciar sesión (módulo 3): se emite un token válido directamente.
+    estudiante = make_user(RolUsuario.ESTUDIANTE, clave=None)
+    return bearer(security.create_access_token(estudiante.id, estudiante.rol.value, estudiante.version_token))
