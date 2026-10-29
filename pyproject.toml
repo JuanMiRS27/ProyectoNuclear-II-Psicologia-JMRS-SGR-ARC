@@ -1,0 +1,9 @@
+[project]
+name = "simulador-psicologia-social-backend"
+version = "0.1.0"
+description = "Backend del Simulador de Psicología Social (monolito modular con FastAPI)."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

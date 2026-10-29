@@ -1,0 +1,73 @@
+# --- Secretos y configuración local -------------------------------------------
+# Solo se versiona .env.example (sin credenciales reales).
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+pwfile
+
+# --- Entornos virtuales ------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# --- Python: bytecode, builds y empaquetado -----------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# --- Pruebas, cobertura y herramientas de análisis ----------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.hypothesis/
+
+# --- Logs y archivos temporales -----------------------------------------------
+*.log
+logs/
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+tmp/
+temp/
+
+# --- PostgreSQL y bases de datos locales --------------------------------------
+# Clústeres locales, volcados y bases embebidas generadas durante el desarrollo.
+pgdata/
+postgres-data/
+*.dump
+*.backup
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.db
+
+# --- IDE, editores y sistema operativo ----------------------------------------
+.vscode/
+.idea/
+*.code-workspace
+.claude/
+.DS_Store
+Thumbs.db
+desktop.ini
