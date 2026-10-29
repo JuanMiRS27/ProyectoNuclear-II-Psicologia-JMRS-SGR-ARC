@@ -8,7 +8,7 @@ from app.modules.auth.models import RolUsuario, Usuario
 from app.modules.cases.models import CasoEstudio
 from app.modules.cases.repositories import CasoRepository
 from app.modules.cases.states import CicloVidaCaso
-from app.modules.sessions import eventos
+from app.modules.sessions import eventos, integracion
 from app.modules.sessions.models import Convocatoria, EspacioAcademico, EstadoSesionEnum, Sesion
 from app.modules.sessions.schemas import CodigoConvocatoriaRead, SesionCreate, SesionUpdate
 from app.modules.sessions.security.cifrado import CodigoCifradoInvalidoError, cifrar_codigo, descifrar_codigo
@@ -168,7 +168,10 @@ class SesionService(_ConvocatoriasMixin):
     def finalizar(self, docente: Usuario, sesion_id: uuid.UUID) -> Sesion:
         with self._transaction():
             sesion = self._sesion_bloqueada(sesion_id, docente)
-            CicloVidaSesion(sesion).finalizar(self._reloj.ahora())
+            ahora = self._reloj.ahora()
+            CicloVidaSesion(sesion).finalizar(ahora)
+            # Módulo 4: los intentos EN_PROGRESO pasan a EXPIRADA en esta misma transacción.
+            integracion.cierre_participaciones().cerrar_por_fin_de_sesion(self._session, sesion.id, ahora)
             self._emitir(eventos.EventoSesion(eventos.SESION_FINALIZADA, sesion.id, {"origen": "docente"}))
         return sesion
 
@@ -246,7 +249,10 @@ class ConvocatoriaService(_ConvocatoriasMixin):
             sesion = self._sesion_bloqueada(sesion_id, docente)
             CicloVidaSesion(sesion).asegurar_convocatorias_editables()
             convocatoria = self._convocatoria_activa(sesion_id, convocatoria_id)
-            convocatoria.revocada_en = self._reloj.ahora()
+            ahora = self._reloj.ahora()
+            convocatoria.revocada_en = ahora
+            # Módulo 4: el intento EN_PROGRESO (si lo hay) pasa a EXPIRADA en esta misma transacción.
+            integracion.cierre_participaciones().cerrar_por_revocacion(self._session, convocatoria.id, ahora)
             self._emitir(eventos.evento_convocatoria(eventos.CONVOCATORIA_RETIRADA, sesion.id, convocatoria_id))
 
     def modificar_intentos(

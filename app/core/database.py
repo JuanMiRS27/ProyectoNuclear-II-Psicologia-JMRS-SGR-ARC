@@ -23,7 +23,14 @@ class Base(DeclarativeBase):
 
 _settings = get_settings()
 
-engine = create_engine(_settings.DATABASE_URL, echo=_settings.SQL_ECHO, pool_pre_ping=True)
+# timezone=UTC en cada conexión: los TIMESTAMPTZ se devuelven siempre en UTC, sin depender
+# de la zona horaria configurada en el servidor PostgreSQL ni en el equipo.
+engine = create_engine(
+    _settings.DATABASE_URL,
+    echo=_settings.SQL_ECHO,
+    pool_pre_ping=True,
+    connect_args={"options": "-c timezone=UTC"},
+)
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 

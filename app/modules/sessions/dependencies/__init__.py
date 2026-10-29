@@ -16,12 +16,12 @@ from app.core.exceptions import AuthenticationError
 from app.modules.auth.dependencies import require_roles
 from app.modules.auth.dependencies.auth import DbSession
 from app.modules.auth.models import RolUsuario, Usuario
+from app.modules.sessions import integracion
 from app.modules.sessions.security import LimitadorIntentos, get_limitador
 from app.modules.sessions.services import (
     AccesoEstudiantil,
     AccesoEstudiantilService,
     PoliticaReingreso,
-    SinReingreso,
     ConvocatoriaService,
     EspacioService,
     SesionService,
@@ -47,9 +47,9 @@ def get_convocatoria_service(db: DbSession, reloj: RelojDep) -> ConvocatoriaServ
     return ConvocatoriaService(db, reloj)
 
 
-def get_politica_reingreso() -> PoliticaReingreso:
-    """El módulo 4 sustituirá esta dependencia por su política de recuperación de participaciones."""
-    return SinReingreso()
+def get_politica_reingreso(db: DbSession) -> PoliticaReingreso:
+    """Política configurada en `integracion` (el módulo 4 registra la suya; por defecto, `SinReingreso`)."""
+    return integracion.politica_reingreso(db)
 
 
 def get_acceso_service(

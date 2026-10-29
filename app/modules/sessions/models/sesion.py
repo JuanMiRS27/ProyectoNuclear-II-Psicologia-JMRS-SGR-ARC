@@ -140,7 +140,7 @@ class Convocatoria(Base):
         UniqueConstraint("sesion_id", "estudiante_id", name="uq_convocatoria_sesion_estudiante"),
         CheckConstraint("intentos_autorizados >= 1", name="intentos_positivos"),
         # Solo se admite el formato cifrado: un código en claro no puede guardarse por error.
-        CheckConstraint("codigo_autorizacion ~ '^v[0-9]+\.[A-Za-z0-9_-]+$'", name="codigo_cifrado"),
+        CheckConstraint(r"codigo_autorizacion ~ '^v[0-9]+\.[A-Za-z0-9_-]+$'", name="codigo_cifrado"),
         Index("ix_convocatoria_estudiante_id", "estudiante_id"),
     )
 

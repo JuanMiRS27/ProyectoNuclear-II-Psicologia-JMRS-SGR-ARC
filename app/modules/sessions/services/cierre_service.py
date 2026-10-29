@@ -5,7 +5,7 @@ import uuid
 from datetime import timedelta
 
 from app.core.config import get_settings
-from app.modules.sessions import eventos
+from app.modules.sessions import eventos, integracion
 from app.modules.sessions.services.base import ServicioSesionesBase
 from app.modules.sessions.states import CicloVidaSesion
 
@@ -38,6 +38,7 @@ class CierreSesionesService(ServicioSesionesBase):
                     continue  # la está procesando otra ejecución
                 estado_anterior = sesion.estado.value
                 if CicloVidaSesion(sesion).cerrar_por_vencimiento(ahora, plazo):
+                    integracion.cierre_participaciones().cerrar_por_fin_de_sesion(self._session, sesion.id, ahora)
                     cerradas.append(sesion.id)
                     logger.info("sesion=%s cerrada automaticamente (estado anterior %s)", sesion.id, estado_anterior)
                     self._emitir(

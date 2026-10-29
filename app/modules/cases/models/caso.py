@@ -195,6 +195,9 @@ class Opcion(Base):
     __tablename__ = "opcion"
     __table_args__ = (
         UniqueConstraint("pregunta_id", "orden", deferrable=True, initially="IMMEDIATE", name="uq_opcion_pregunta_orden"),
+        # Migración 0008 (módulo 4): permite la FK compuesta respuesta(opcion_id, pregunta_id) -> opcion(id, pregunta_id),
+        # que garantiza en la BD que la opción elegida pertenece a la pregunta respondida.
+        UniqueConstraint("id", "pregunta_id", name="uq_opcion_id_pregunta"),
         CheckConstraint("orden >= 1", name="orden_positivo"),
         CheckConstraint("length(btrim(texto)) > 0", name="texto_no_vacio"),
     )

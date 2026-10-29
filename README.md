@@ -1,6 +1,6 @@
 # Iter Animi — Simulador de Psicología Social (Backend)
 
-Monolito modular en **FastAPI + PostgreSQL**. Estado actual: módulos **1 — Autenticación y Gestión de Usuarios** y **2 — Gestión de Casos Académicos** (integrados en `main`), y **3 — Sesiones y Convocatorias** (en revisión).
+Monolito modular en **FastAPI + PostgreSQL**. Estado actual: módulos **1 — Autenticación y Usuarios**, **2 — Gestión de Casos Académicos** y **3 — Sesiones y Convocatorias** (integrados en `main`), y **4 — Participaciones** (en revisión).
 
 | Componente | Versión |
 |---|---|
@@ -78,6 +78,9 @@ alembic downgrade base    # revertir todo
 | `0005_sesiones` | Módulo 3: tipo `estado_sesion`, tablas `espacio_academico`, `sesion` y `convocatoria`, sus restricciones e índices, y los disparadores `trg_sesion_programable` y `trg_convocatoria_estudiante`. No modifica tablas anteriores. |
 | `0006_cifrado_codigos` | Cifra `convocatoria.codigo_autorizacion` en reposo (AES-256-GCM): pasa de `VARCHAR(12)` en claro a `VARCHAR(100)` con `v1.<base64url>`. Elimina `uq_convocatoria_codigo_autorizacion` y sustituye el CHECK de formato por `ck_convocatoria_codigo_cifrado`. Cifra (upgrade) o descifra (downgrade) las filas existentes con `CONVOCATION_CODE_ENCRYPTION_KEY`; si hay filas y falta la clave, se detiene sin cambiar nada. |
 | `0007_revocacion_convocatoria` | Columna `convocatoria.revocada_en TIMESTAMPTZ NULL` (revocación lógica; NULL = activa). El downgrade elimina las convocatorias revocadas, para volver a la semántica "retirar = borrar". |
+| `0008_opcion_id_pregunta` | Ajuste de `opcion` (módulo 2) para el módulo 4: `UNIQUE (id, pregunta_id)`, necesario para la FK compuesta de `respuesta`. No cambia datos. |
+| `0009_participaciones` | Módulo 4: tipos `estado_participacion` y `motivo_cierre_participacion`, tablas `participacion` y `respuesta`, el índice único parcial de intentos activos y los disparadores `trg_participacion_insercion`, `trg_participacion_inmutable` y `trg_respuesta_valida`. |
+| `0010_evaluacion_tras_cierre` | Ajuste del módulo 4, sin tocar 0009: CHECK `ck_participacion_evaluacion_tras_cierre` (nota y retroalimentación solo en intentos cerrados); `fn_participacion_inmutable` protege también el `id`; `fn_respuesta_valida` impide mover una respuesta de participación o de pregunta y bloquea la participación con `FOR SHARE` para respetar cierres concurrentes. |
 
 ### 4. Administrador inicial
 
@@ -791,9 +794,216 @@ terminaría a las 10:30, después del fin programado. Lo que el módulo 3 ya gar
 - No hay rotación de la clave de cifrado de códigos (el formato `v1` la prepara).
 - Los eventos solo se registran en el log hasta el módulo 6.
 
+## Módulo 4: Participaciones y resolución de cuestionarios
+
+Un estudiante con acceso estudiantil (módulo 3) inicia un intento, consulta el cuestionario sin las respuestas correctas,
+registra y cambia sus respuestas, y finaliza. Si se le agota el tiempo, el intento expira. **El frontend mostrará el
+cuestionario y el contador, pero el backend es la fuente de verdad** de las respuestas, los tiempos, los estados y los
+intentos. Nada de eso se toma del cliente. No calcula notas ni retroalimentación: eso es del módulo 5.
+
+### Estructura
+
+```text
+app/bootstrap.py                     # Raíz de composición: conecta los puertos del módulo 3 con el módulo 4
+app/modules/participations/
+├── models/        # Participacion, Respuesta, EstadoParticipacionEnum, MotivoCierreEnum
+├── schemas/       # Vistas del estudiante (cuestionario proyectado campo a campo)
+├── repositories/  # Bloqueos en orden fijo, upsert de respuestas, consultas
+├── services/      # ParticipacionService, RespuestaService, ExpiracionParticipacionesService, ConsultaEvaluacionService
+├── policies/      # temporizador (reglas de tiempo y cierre) e integracion_sesiones (cierre y reingreso)
+├── dependencies/  # Reutiliza la autenticación estudiantil del módulo 3
+└── routers/
+app/modules/sessions/integracion.py  # Puertos del módulo 3 (cierre de participaciones y política de reingreso)
+app/workers/participation_expiration/
+```
+
+### Modelo de datos
+
+| Tabla | Columnas | Integridad |
+|---|---|---|
+| `participacion` | `id`, `convocatoria_id`, `numero_intento`, `inicio`, `fin`, `nota_final` (NUMERIC(4,2)), `estado`, **`motivo_cierre`**, `retroalimentacion_general` | FK a convocatoria con RESTRICT. `UNIQUE (convocatoria_id, numero_intento)`. **Índice único parcial** `(convocatoria_id) WHERE estado='EN_PROGRESO'`. `numero_intento ≥ 1`. `(estado = EN_PROGRESO) = (fin IS NULL)`. `fin ≥ inicio`. Motivo coherente con el estado. Nota y retroalimentación solo con el intento cerrado (0010). Disparadores de inserción e inmutabilidad. |
+| `respuesta` | `id`, `participacion_id`, `pregunta_id`, `opcion_id`, `respondida_en`, `actualizada_en` | FK a participación y a pregunta con RESTRICT. **FK compuesta** `(opcion_id, pregunta_id) → opcion(id, pregunta_id)`: la opción pertenece a la pregunta. `UNIQUE (participacion_id, pregunta_id)`. `actualizada_en ≥ respondida_en`. Disparador de validez. |
+
+- **`motivo_cierre` (columna añadida):** `VOLUNTARIO`, `TIEMPO_AGOTADO`, `CONVOCATORIA_REVOCADA` o `SESION_FINALIZADA`. El módulo 5 necesita la causa del cierre (sección 24), y no puede deducirse de `estado` y `fin`: una EXPIRADA puede deberse a tres causas distintas.
+- **`nota_final` y `retroalimentacion_general`:** permanecen nulas en el módulo 4. No se guarda una nota ficticia de cero. El módulo 5 puede escribirlas (y corregirlas) en participaciones FINALIZADAS o EXPIRADAS; un CHECK impide registrarlas mientras el intento está EN_PROGRESO. Ningún endpoint estudiantil las modifica ni las muestra.
+- **Disparadores (refuerzo en PostgreSQL de las reglas de los servicios):**
+  - `trg_participacion_insercion`: convocatoria activa, sesión EN_CURSO y `numero_intento ≤ intentos_autorizados`.
+  - `trg_participacion_inmutable`: `id`, `inicio`, `numero_intento` y `convocatoria_id` nunca cambian. Una participación cerrada no cambia de estado, fin ni motivo; solo `nota_final` y `retroalimentacion_general`. Las participaciones no se borran.
+  - `trg_respuesta_valida`: las respuestas solo se insertan, cambian o borran en participaciones EN_PROGRESO, y la pregunta debe pertenecer al caso de la sesión. Una respuesta no cambia de participación ni de pregunta. La comprobación bloquea la participación con `FOR SHARE`: si otra transacción la está cerrando, espera a su commit y reevalúa el estado.
+- **Tiempo en la base de datos:** el límite de tiempo no se verifica con un disparador (usaría `now()` de PostgreSQL en lugar del reloj de la aplicación). Lo aplican los servicios y el worker.
+
+### Estados de una participación
+
+| Estado | Motivo | Cuándo |
+|---|---|---|
+| `EN_PROGRESO` | — | Desde el inicio del intento (como máximo uno por convocatoria) |
+| `FINALIZADA` | `VOLUNTARIO` | El estudiante finalizó antes de agotar su tiempo (aunque no respondiera todo) |
+| `EXPIRADA` | `TIEMPO_AGOTADO` | `ahora ≥ inicio + tiempo_max_min`: lo detecta una consulta, una modificación, la finalización o el worker |
+| `EXPIRADA` | `CONVOCATORIA_REVOCADA` | El docente retiró al estudiante durante el intento |
+| `EXPIRADA` | `SESION_FINALIZADA` | El docente finalizó la sesión, o lo hizo el cierre automático |
+
+Los estados cerrados son finales. Una reactivación de la convocatoria no reabre intentos. No se usa el patrón State para
+las participaciones: sus reglas son pocas y lineales, y están en `policies/temporizador.py` como funciones puras.
+
+### Temporizador individual
+
+```text
+fecha_limite = participacion.inicio + sesion.tiempo_max_min      (inicio: reloj UTC del servidor)
+```
+
+- `inicio` lo asigna el servidor y nunca cambia (lo garantiza también un disparador).
+  - Recargar la página o volver a ingresar no lo reinicia.
+  - Cerrar el navegador no detiene el contador.
+  - No depende de la expiración del JWT, ni de `sesion.fin`, ni del cierre automático.
+- `tiempo_restante_segundos` se calcula en cada respuesta, redondeando hacia arriba. No hay contadores en memoria.
+- **Regla exacta:** con `ahora ≥ fecha_limite` no se acepta ningún cambio y el intento queda EXPIRADA.
+  - **Al consultar o modificar:** el intento vencido se cierra y se confirma antes de responder; una modificación recibe 409 "tiempo agotado".
+  - **Worker:** cierra en segundo plano los vencidos aunque el estudiante no vuelva.
+- **Fecha de cierre por tiempo:** `fin = fecha_limite`, el instante real en que se agotó, no el de la detección. En un cierre administrativo con tiempo restante, `fin` es el instante del cierre. Si el tiempo ya se había agotado, prevalece `TIEMPO_AGOTADO`.
+- **Después de `sesion.fin`:** quien inició antes del límite de ingreso puede continuar hasta agotar su tiempo individual mientras la sesión siga EN_CURSO. Por ejemplo, con una sesión de 08:00 a 10:00, un inicio a las 08:55 y 90 minutos, el intento llega hasta las 10:25. Desde las 09:00 nadie puede iniciar un intento nuevo. El cierre automático (`fin + 24 h`) nunca añade tiempo.
+
+### Control de intentos
+
+- **Intentos utilizados:** todas las participaciones creadas para la convocatoria (EN_PROGRESO, FINALIZADA y EXPIRADA). El conteo nunca se reinicia, ni siquiera tras revocar y reactivar la convocatoria.
+- **Intento nuevo:** solo si no hay uno EN_PROGRESO, `utilizados < intentos_autorizados` y la ventana de ingreso está abierta, según `AccesoEstudiantil.asegurar_inicio_participacion` del módulo 3, que se reutiliza sin duplicarlo. Su número es `utilizados + 1`.
+- **Concurrencia:**
+  - el inicio bloquea la convocatoria en exclusiva, así que dos solicitudes simultáneas producen un intento creado y otro recuperado;
+  - el índice único parcial y `UNIQUE (convocatoria_id, numero_intento)` son la garantía final;
+  - el disparador impide superar los intentos autorizados aunque se inserte por SQL.
+
+### Recuperación de un intento
+
+- **Mismo intento:** `POST /student/sessions/{id}/participations` devuelve el intento EN_PROGRESO si existe (**200**), sin consumir otro ni reiniciar el tiempo. Si no existe y se cumplen las reglas, crea uno nuevo (**201**).
+- **JWT vencido fuera de la ventana de ingreso:** el módulo 4 registra `ReingresoConParticipacionActiva` como política de reingreso del módulo 3 (con `app/bootstrap.py`). El login la consulta solo con credenciales válidas, convocatoria y cuenta activas y sesión EN_CURSO. Permite el reingreso si **esa** convocatoria tiene un intento EN_PROGRESO con tiempo, también después de `sesion.fin`.
+- **El token recuperado:** tiene el mismo alcance y las mismas verificaciones. Sirve para continuar, nunca para iniciar otro intento fuera de la ventana. Los intentos finalizados, expirados o revocados no se recuperan.
+
+### Integración con el módulo 3
+
+- **Puertos sin dependencias circulares:** el módulo 3 declara puertos en `sessions/integracion.py` con implementaciones por defecto que no hacen nada, y no importa el módulo 4. `app/bootstrap.py` registra las del módulo 4. Se invoca en `create_app()` y en los dos workers.
+- **Retirar un estudiante:** en la misma transacción que fija `revocada_en`, su intento EN_PROGRESO pasa a EXPIRADA (`CONVOCATORIA_REVOCADA`), y el estudiante pierde el acceso de inmediato.
+- **Finalizar la sesión, manual o automáticamente:** en la misma transacción, todos los intentos EN_PROGRESO pasan a EXPIRADA (`SESION_FINALIZADA`), y los FINALIZADOS no cambian. Se hace dentro de la transacción y no con eventos posteriores al commit.
+- **Orden de bloqueo único:** `sesion → convocatoria → participacion`.
+  - El módulo 3 bloquea la sesión en exclusiva.
+  - Las operaciones del estudiante la bloquean en modo compartido (`FOR SHARE`), de modo que muchos estudiantes operan a la vez, pero un cierre de sesión espera o se adelanta sin interbloqueos.
+  - El worker solo bloquea filas de `participacion`, con `SKIP LOCKED`.
+- **Hora tras el bloqueo:** los servicios leen el reloj *después* de obtener los bloqueos (`Contexto.ahora`). Una solicitud que llegó antes del límite pero esperó un bloqueo hasta después del límite se rechaza (409) y cierra el intento como EXPIRADA (`TIEMPO_AGOTADO`). Una respuesta que espera tras una revocación o una finalización de la sesión se rechaza al revalidar convocatoria y sesión.
+- **Respuestas:** nunca se borran al cerrar.
+- **Limitación histórica de la reactivación:** volver a convocar a un estudiante reutiliza la misma fila de convocatoria. Sus intentos anteriores, incluidos los cerrados por la revocación, siguen contando, y el docente debe aumentar `intentos_autorizados` si quiere concederle otro.
+- **Zona horaria:** `core/database.py` abre cada conexión con `timezone=UTC`, para que los `TIMESTAMPTZ` leídos de la base de datos salgan en UTC igual que los recién creados.
+
+### Ausencias e intentos incompletos (para el módulo 5)
+
+| Situación | Representación |
+|---|---|
+| Completa | `FINALIZADA` / `VOLUNTARIO` (puede tener preguntas sin responder) |
+| Incompleta | `EXPIRADA` con su motivo (por tiempo o administrativo), con las respuestas que alcanzó a registrar |
+| Ausencia | Convocatoria activa **sin ninguna** participación. No se crea una participación ficticia. |
+
+`ConsultaEvaluacionService` (`services/consulta_evaluacion.py`) es de solo lectura:
+
+- `obtener(participacion_id)` devuelve la participación, su estado y motivo, sus respuestas (`pregunta → opción`), las preguntas sin responder, el caso con su contenido y la rúbrica;
+- `cerradas_de_sesion(sesion_id)` lista las participaciones evaluables;
+- `ausencias(sesion_id)` lista las convocatorias activas sin intentos.
+
+El módulo 5 podrá aplicar su Strategy sobre esto sin modificar el historial. Solo escribirá `nota_final` y `retroalimentacion_general`.
+
+### Endpoints del módulo 4 (`/api/v1`, token estudiantil)
+
+| Método | Ruta | Descripción | Éxito |
+|---|---|---|---|
+| POST | `/student/sessions/{session_id}/participations` | Iniciar (201) o recuperar el intento en progreso (200) | 201 / 200 |
+| GET | `/student/participations` | Intentos de la convocatoria del token | 200 |
+| GET | `/student/participations/{id}` | Estado, fecha límite, tiempo restante, intentos y progreso | 200 |
+| GET | `/student/participations/{id}/questionnaire` | Cuestionario seguro con la selección guardada | 200 |
+| PUT | `/student/participations/{id}/answers/{question_id}` | Guardar o cambiar la respuesta (`{"opcion_id": …}`), idempotente | 200 |
+| GET | `/student/participations/{id}/answers` | Selecciones guardadas | 200 |
+| DELETE | `/student/participations/{id}/answers/{question_id}` | Dejar la pregunta sin responder (idempotente) | 204 |
+| POST | `/student/participations/{id}/finish` | Finalizar (idempotente; no exige responder todo) | 200 |
+
+Errores:
+
+| Código | Significado |
+|---|---|
+| 400 | La opción no pertenece a la pregunta |
+| 401 | Token ausente, vencido o revocado; convocatoria revocada; sesión no EN_CURSO |
+| 403 | Ventana de ingreso cerrada para un intento nuevo, o token de otra sesión |
+| 404 | Participación de otra convocatoria o estudiante, o pregunta ajena al caso |
+| 409 | Intento cerrado, tiempo agotado o intentos agotados |
+| 422 | Cuerpo inválido (campos extra como `respondida_en` o `estado` se rechazan) |
+
+Los intentos ajenos responden 404, sin revelar que existen. Las respuestas del estudiante llevan `Cache-Control: no-store`.
+
+**Cuestionario seguro:** se construye con esquemas propios (`CuestionarioRead`), campo a campo y sin `from_attributes`.
+Nunca incluye `es_correcta`, `justificacion`, criterios, rúbrica, pesos, niveles, notas ni la CaseDSL. Las respuestas
+guardadas tampoco indican si son correctas. Las pruebas verifican la ausencia de esos campos y textos en todos los
+endpoints del estudiante.
+
+### Ejemplos
+
+Iniciar o recuperar:
+
+```http
+POST /api/v1/student/sessions/9b1e…/participations
+Authorization: Bearer <token estudiantil>
+
+201 Created
+{
+  "id": "5d2c…", "convocatoria_id": "c41a…", "sesion_id": "9b1e…",
+  "numero_intento": 1, "estado": "EN_PROGRESO", "motivo_cierre": null,
+  "inicio": "2026-11-03T08:00:00Z", "fin": null, "fecha_limite": "2026-11-03T08:40:00Z",
+  "tiempo_restante_segundos": 2400, "intentos_autorizados": 1, "intentos_utilizados": 1,
+  "progreso": {"total_preguntas": 3, "respondidas": 0, "pendientes": 3, "porcentaje": 0}
+}
+```
+
+Guardar una respuesta:
+
+```http
+PUT /api/v1/student/participations/5d2c…/answers/7f10…
+{"opcion_id": "a3e9…"}
+
+200 OK
+{"pregunta_id": "7f10…", "opcion_id": "a3e9…", "respondida_en": "2026-11-03T08:05:12Z", "actualizada_en": "2026-11-03T08:05:12Z"}
+```
+
+Responder después de la fecha límite:
+
+```http
+409 Conflict
+{"detail": "El tiempo de la participación terminó; ya no se aceptan cambios."}
+```
+
+### Migraciones y worker
+
+```powershell
+alembic upgrade head                                # aplica 0008, 0009 y 0010
+python -m app.workers.participation_expiration      # una pasada (cron / Programador de tareas)
+python -m app.workers.participation_expiration --intervalo 60
+python -m app.workers.session_expiration            # el cierre de sesiones también cierra sus intentos activos
+```
+
+### Decisiones
+
+1. **`motivo_cierre`:** columna añadida, justificada por la sección 24.
+2. **Migración 0008 aparte:** el ajuste de `opcion` (`UNIQUE (id, pregunta_id)`) va en su propia migración, porque modifica una tabla anterior. Por eso las participaciones quedan en **0009**, y no en la 0008 propuesta.
+3. **Opción y pregunta:** la FK compuesta garantiza en la base de datos que la opción pertenece a la pregunta. Un disparador garantiza que la pregunta pertenece al caso de la sesión.
+4. **`POST …/participations` sirve para iniciar y para recuperar:** 201 o 200.
+5. **Finalizar es idempotente:** si el intento ya está cerrado, devuelve su estado actual (200) sin cambiarlo.
+6. **`DELETE` de respuesta es idempotente** y solo se permite con el intento activo y con tiempo.
+7. **`GET /student/participations`:** el alcance del token es una convocatoria, así que lista los intentos de esa convocatoria.
+8. **El cuestionario sigue disponible tras cerrar** (sin correcciones), para que el estudiante revise lo que respondió.
+9. **Progreso:** `porcentaje` es entero, con redondeo hacia abajo, y se calcula a partir de las respuestas persistidas.
+10. **No se usa el patrón State** para las participaciones, tal como indicó la especificación.
+11. **Migración 0010:** los ajustes a los disparadores de 0009 van en una migración nueva, en lugar de modificar 0009 ya aplicada.
+
+### Limitaciones
+
+- Un estudiante cuyo token vence después de que la sesión pasó a FINALIZADO no puede reingresar; pero su intento ya quedó cerrado en esa misma transacción, así que no pierde nada que pudiera continuar.
+- El worker procesa hasta 500 intentos por pasada; con más, se completan en pasadas siguientes.
+- Los intentos que vencen entre dos pasadas del worker siguen figurando EN_PROGRESO en la base de datos hasta la siguiente pasada o la siguiente petición del estudiante. Ninguna operación los trata como vigentes, porque todas comprueban la fecha límite antes de actuar.
+
 ## Pendiente para módulos posteriores
 
-- **Módulo 5:** cálculo de calificaciones con `niveles`, `peso` y `escala_max`.
-- **Módulo 4:** entidad `Participacion` (FK a `convocatoria` con RESTRICT), conteo de intentos frente a `intentos_autorizados`, control de `tiempo_max_min` por estudiante, política de reingreso (`PoliticaReingreso`) y vista del caso sin `es_correcta` ni `justificacion` (`OpcionRead` es solo para autores). Ver "Integración con el módulo 4".
+- **Módulo 5:** calificación (Strategy) a partir de `ConsultaEvaluacionService`: escribir `nota_final` y `retroalimentacion_general`, tratar las ausencias y definir la interpretación de `minAciertosPct` y de las opciones correctas múltiples.
 - **Módulo 6:** envío de códigos por correo (y desactivar `CONVOCATION_CODE_RETRIEVAL_ENABLED`) e implementación de `PublicadorEventosSesion`.
 - *Refresh tokens*, "cerrar todas las sesiones" a petición del usuario y limitación de intentos en el login con contraseña (el ingreso estudiantil ya la tiene).

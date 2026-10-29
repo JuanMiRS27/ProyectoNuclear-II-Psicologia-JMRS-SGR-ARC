@@ -8,6 +8,7 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
+from app.bootstrap import configurar_integraciones
 from app.core.clock import Reloj, RelojSistema
 from app.core.database import SessionLocal
 from app.modules.sessions.services import CierreSesionesService
@@ -21,6 +22,7 @@ def ejecutar_una_vez(
     plazo: timedelta | None = None,
 ) -> list[uuid.UUID]:
     """Una pasada del cierre automático. No depende de peticiones HTTP."""
+    configurar_integraciones()  # cerrar sesiones también cierra sus participaciones activas (módulo 4)
     with session_factory() as session:
         cerradas = CierreSesionesService(session, reloj or RelojSistema()).cerrar_vencidas(plazo)
     logger.info("cierre automatico: %d sesion(es) finalizada(s)", len(cerradas))
