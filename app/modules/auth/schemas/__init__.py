@@ -2,6 +2,7 @@ from app.modules.auth.schemas.auth import LoginRequest, MessageResponse, Passwor
 from app.modules.auth.schemas.usuario import (
     CasePermissionUpdate,
     DocenteCreate,
+    EstudianteCreate,
     UsuarioList,
     UsuarioRead,
     UsuarioStatusUpdate,
@@ -11,6 +12,7 @@ from app.modules.auth.schemas.usuario import (
 __all__ = [
     "CasePermissionUpdate",
     "DocenteCreate",
+    "EstudianteCreate",
     "LoginRequest",
     "MessageResponse",
     "PasswordChangeRequest",

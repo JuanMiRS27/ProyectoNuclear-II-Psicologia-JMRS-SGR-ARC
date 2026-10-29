@@ -55,9 +55,11 @@ class UnprocessableEntityError(AppError):
 
 async def _app_error_handler(_: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AppError)
-    headers = {"WWW-Authenticate": "Bearer"} if isinstance(exc, AuthenticationError) else None
+    headers = dict(getattr(exc, "headers", None) or {})
+    if isinstance(exc, AuthenticationError):
+        headers["WWW-Authenticate"] = "Bearer"
     content = {"detail": exc.detail, **jsonable_encoder(exc.extra)}
-    return JSONResponse(status_code=exc.status_code, content=content, headers=headers)
+    return JSONResponse(status_code=exc.status_code, content=content, headers=headers or None)
 
 
 def register_exception_handlers(app: FastAPI) -> None:

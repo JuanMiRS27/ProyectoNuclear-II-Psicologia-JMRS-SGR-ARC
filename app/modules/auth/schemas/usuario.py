@@ -54,6 +54,16 @@ class DocenteCreate(BaseModel):
     codigo_institucional: CodigoInstitucional | None = None
 
 
+class EstudianteCreate(BaseModel):
+    """Cuenta ESTUDIANTE (módulo 3): sin contraseña; accede con el código de cada convocatoria."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nombre_completo: NombreCompleto
+    correo: Correo
+    codigo_institucional: CodigoInstitucional | None = None
+
+
 class UsuarioUpdate(BaseModel):
     """Datos personales modificables. El rol, la contraseña y los permisos tienen endpoints propios."""
 

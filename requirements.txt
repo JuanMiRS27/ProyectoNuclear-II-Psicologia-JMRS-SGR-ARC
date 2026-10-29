@@ -14,6 +14,8 @@ pydantic-settings==2.16.2
 # Seguridad
 PyJWT==2.15.1
 argon2-cffi==25.1.0
+# Cifrado autenticado (AES-256-GCM) de los códigos de convocatoria en reposo
+cryptography==50.0.2
 
 # Pruebas
 pytest==9.2.0

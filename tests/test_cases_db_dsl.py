@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 from alembic import command
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect, select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -81,8 +82,10 @@ def test_migration_0004_refuses_to_run_with_cases_over_240(creador):
     finally:
         engine.dispose()
         command.upgrade(config, "head")
+    # Tras corregir el dato, la cadena de migraciones llega hasta la revisión head vigente.
+    head = ScriptDirectory.from_config(config).get_current_head()
     with engine.connect() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0004_tiempo_max_240"
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == head
 
 
 def test_downgrade_to_0002_removes_module_2_and_keeps_users(make_user):

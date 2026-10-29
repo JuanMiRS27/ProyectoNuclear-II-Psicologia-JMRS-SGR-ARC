@@ -1,6 +1,6 @@
 # Iter Animi — Simulador de Psicología Social (Backend)
 
-Monolito modular en **FastAPI + PostgreSQL**. Estado actual: **Módulo 1 — Autenticación y Gestión de Usuarios** (aprobado) y **Módulo 2 — Gestión de Casos Académicos** (en revisión).
+Monolito modular en **FastAPI + PostgreSQL**. Estado actual: módulos **1 — Autenticación y Gestión de Usuarios** y **2 — Gestión de Casos Académicos** (integrados en `main`), y **3 — Sesiones y Convocatorias** (en revisión).
 
 | Componente | Versión |
 |---|---|
@@ -75,6 +75,9 @@ alembic downgrade base    # revertir todo
 | `0002_version_token` | Columna `usuario.version_token INTEGER NOT NULL DEFAULT 0` + `CHECK (version_token >= 0)`. Las filas existentes quedan en 0. Los JWT emitidos antes de aplicarla no llevan el claim `ver` y dejan de ser válidos: los usuarios deben iniciar sesión de nuevo. |
 | `0003_casos` | Módulo 2: tipo `estado_caso`, tablas `caso_estudio`, `escenario`, `pregunta`, `opcion`, `rubrica`, `criterio_rubrica`, sus restricciones e índices, y el disparador `trg_pregunta_criterio_mismo_caso`. No modifica `usuario`. |
 | `0004_tiempo_max_240` | Sustituye `ck_caso_estudio_tiempo_positivo` por `ck_caso_estudio_tiempo_en_rango` (`tiempo_estimado_min BETWEEN 1 AND 240`). Si algún caso supera 240 minutos, se detiene sin modificar datos. |
+| `0005_sesiones` | Módulo 3: tipo `estado_sesion`, tablas `espacio_academico`, `sesion` y `convocatoria`, sus restricciones e índices, y los disparadores `trg_sesion_programable` y `trg_convocatoria_estudiante`. No modifica tablas anteriores. |
+| `0006_cifrado_codigos` | Cifra `convocatoria.codigo_autorizacion` en reposo (AES-256-GCM): pasa de `VARCHAR(12)` en claro a `VARCHAR(100)` con `v1.<base64url>`. Elimina `uq_convocatoria_codigo_autorizacion` y sustituye el CHECK de formato por `ck_convocatoria_codigo_cifrado`. Cifra (upgrade) o descifra (downgrade) las filas existentes con `CONVOCATION_CODE_ENCRYPTION_KEY`; si hay filas y falta la clave, se detiene sin cambiar nada. |
+| `0007_revocacion_convocatoria` | Columna `convocatoria.revocada_en TIMESTAMPTZ NULL` (revocación lógica; NULL = activa). El downgrade elimina las convocatorias revocadas, para volver a la semántica "retirar = borrar". |
 
 ### 4. Administrador inicial
 
@@ -502,10 +505,295 @@ de esta etapa y del modelo relacional; estas son las decisiones que conviene con
 11. **Administradores.** No acceden a los casos. Si necesitan supervisar el contenido, habría que definir un endpoint de solo lectura.
 12. **Cambio en `app/core/exceptions.py`.** `AppError` acepta `extra` (campos adicionales en el JSON) y se añadió `UnprocessableEntityError` (422). Es compatible hacia atrás: el módulo 1 no cambia.
 
+## Módulo 3: Sesiones y Convocatorias
+
+Programación y ejecución de sesiones con casos publicados, convocatorias individuales con código de autorización,
+acceso de estudiantes y cierre automático. No registra respuestas, ni calcula calificaciones, ni envía correos:
+eso corresponde a los módulos 4, 5 y 6.
+
+### Estructura
+
+```text
+app/core/clock.py                 # Reloj único (UTC); las pruebas lo sustituyen
+app/modules/sessions/
+├── models/        # EspacioAcademico, Sesion, Convocatoria, EstadoSesionEnum
+├── schemas/       # Pydantic (fechas con zona horaria obligatoria, normalizadas a UTC)
+├── repositories/  # Espacios, sesiones, convocatorias y lectura de estudiantes
+├── services/      # EspacioService, SesionService, ConvocatoriaService, AccesoEstudiantilService, CierreSesionesService
+├── states/        # Patrón State de la sesión
+├── security/      # Generador de códigos, token estudiantil y limitador de intentos
+├── dependencies/  # Política de acceso y token estudiantil
+├── routers/
+└── eventos.py     # Puerto para el módulo 6 (implementación nula)
+app/workers/session_expiration/   # Comando del cierre automático
+```
+
+### Modelo relacional
+
+| Tabla | Integridad |
+|---|---|
+| `espacio_academico` | Nombre y periodo no vacíos. Índice único `(lower(nombre), lower(periodo))`, que no distingue mayúsculas. `activo` es `true` por defecto. |
+| `sesion` | `inicio < fin`, ambas `TIMESTAMPTZ`. `tiempo_max_min` entre 1 y 240. Las FK a caso, espacio y docente usan **RESTRICT**. Índices `(estado, fin)` (cierre automático), `(docente_id, inicio)`, `caso_id` y `espacio_academico_id`. Disparador `trg_sesion_programable`. |
+| `convocatoria` | `UNIQUE (sesion_id, estudiante_id)`. `codigo_autorizacion` guarda el código **cifrado** (`CHECK` de formato `v1.<base64url>`, migración 0006). `intentos_autorizados >= 1`. Las FK a sesión y estudiante usan **RESTRICT** (sin cascada). Disparador `trg_convocatoria_estudiante`. |
+
+- **`trg_sesion_programable`:** al insertar una sesión, o al cambiar su caso, su docente o su tiempo, exige:
+  - que el caso esté PUBLICADO;
+  - que `tiempo_max_min` no supere `tiempo_estimado_min` del caso;
+  - que el responsable sea un DOCENTE.
+
+  Bloquea la fila del caso con `FOR SHARE`, de modo que un archivado concurrente no se cuele. Archivar un caso no cambia las sesiones que ya existían.
+- **`trg_convocatoria_estudiante`:** solo se convoca a usuarios ESTUDIANTE.
+
+### Patrón State de la sesión (`states/`)
+
+Es independiente del State de casos del módulo 2.
+
+| Operación | `EstadoSinIniciar` | `EstadoEnCurso` | `EstadoFinalizado` |
+|---|---|---|---|
+| Modificar programación | Todo (caso, espacio, fechas, tiempo, lugar, mensaje) | Solo `lugar` y `mensaje` | No (409) |
+| Convocar, retirar, intentos, regenerar código | Sí | Sí | No (409) |
+| Iniciar (docente) | Si `inicio ≤ ahora < fin` | No (409) | No (409) |
+| Finalizar (docente) | No (409) | Sí | No (409) |
+| Cierre automático (`ahora ≥ fin + plazo`) | Sí | Sí | No hace nada (idempotente) |
+| Nuevo ingreso de estudiante | 403 "aún no iniciada" | Si `inicio ≤ ahora ≤ límite` | 403 "finalizada" |
+| Tokens estudiantiles ya emitidos | No autorizan | Autorizan | No autorizan |
+
+- `CicloVidaSesion` (el contexto) elige el estado según `sesion.estado` y delega en él. No existe ninguna transición de salida de FINALIZADO.
+- Toda operación que cambia una sesión o sus convocatorias bloquea antes la fila (`SELECT … FOR UPDATE`). Así, dos inicios simultáneos producen un 200 y un 409, y una convocatoria nunca se cuela en una sesión que se está finalizando.
+
+### Reglas de programación
+
+- **Caso:** debe existir, pertenecer al docente (las reglas de autoría del módulo 2) y estar PUBLICADO, según `CicloVidaCaso.admite_programacion()` del módulo 2. Un caso BORRADOR o ARCHIVADO responde 409. Se reutiliza `CasoEstudio`, sin duplicarlo.
+- **Espacio:** debe existir y estar activo.
+- **Docente responsable:** siempre el usuario autenticado. Los esquemas rechazan `docente_id`.
+- **Tiempo máximo:** `tiempo_max_min ≤ tiempo_estimado_min` del caso, y entre 1 y 240.
+- **Fechas:** `inicio < fin`, con zona horaria obligatoria (una fecha sin zona responde 422), y normalizadas a UTC.
+- **Ventana futura:** la hora de fin debe ser posterior al momento actual (ver decisiones).
+- **Transacción:** la sesión y todas sus convocatorias se crean juntas. Si falla cualquier convocatoria, no queda nada.
+- **Contenido del caso:** programar no altera el caso.
+
+### Convocatorias y códigos de autorización
+
+- **Convocatoria:** se identifica al estudiante por su **correo institucional** (el docente no conoce los UUID). Debe ser una cuenta ESTUDIANTE activa.
+- **Código:**
+  - 12 símbolos de Base32 de Crockford (`0-9 A-Z` sin `I L O U`), generados con `secrets`: 60 bits de entropía;
+  - no se repite entre las convocatorias de un mismo estudiante;
+  - se guarda **cifrado** (ver más abajo);
+  - se acepta en minúsculas, con espacios o con guiones.
+- **Dónde no aparece:** en ningún listado, detalle ni respuesta de sesión, ni en los logs, las excepciones o los eventos.
+- **Entrega provisional:** `GET /sessions/{id}/convocations/{cid}/code` (solo el docente responsable, con `Cache-Control: no-store`), hasta que el módulo 6 envíe los códigos por correo. Se puede desactivar con `CONVOCATION_CODE_RETRIEVAL_ENABLED=false`.
+- **Regenerar** exige un motivo. El código anterior deja de servir para ingresar y revoca los tokens emitidos con él.
+- **Intentos:** el docente puede **aumentarlos** (nunca reducirlos) indicando un motivo. El valor inicial es 1.
+- **Retirar** (`DELETE …/convocations/{cid}`) es una **revocación lógica**: fija `revocada_en`, el estudiante pierde el acceso de inmediato y la fila se conserva para las participaciones del módulo 4 y el historial.
+  - Los listados muestran por defecto solo las activas; `?incluir_revocadas=true` muestra todas.
+  - `total_convocatorias` cuenta solo las activas.
+  - Sobre una convocatoria revocada no se pueden cambiar intentos, regenerar el código ni consultarlo (409).
+  - Volver a convocar al estudiante reactiva la misma convocatoria con un código nuevo; conserva su id y sus intentos.
+
+**Protección de los códigos en reposo: cifrado reversible (AES-256-GCM).** El código debe poder entregarse (lo
+consulta el docente y lo enviará por correo el módulo 6), pero eso no obliga a guardarlo en claro. Se evaluaron dos
+estrategias:
+
+| | Cifrado reversible (elegida) | Hash y entrega única |
+|---|---|---|
+| Qué se guarda | `v1.<base64url(nonce ‖ cifrado ‖ etiqueta)>` | HMAC del código |
+| Copia robada de la BD | Sin la clave (en el entorno, no en la BD ni en Git), no revela nada | No revela nada |
+| `GET …/code` del docente | Se mantiene | Desaparece: el código solo se ve al generarlo o regenerarlo |
+| Módulo 6 (correo) | Descifra cuando envía, con la clave del entorno; puede reenviar | Tendría que enviar en el mismo momento de generar, y el código tendría que viajar en el evento (lo que el diseño evita). Reenviar exigiría regenerar e invalidar el anterior |
+| Pérdida de la clave | Los códigos deben regenerarse | Sin efecto |
+
+Detalles:
+
+- **Algoritmo:** AES-256-GCM de la biblioteca `cryptography` (PyCA, dependencia nueva). No hay criptografía propia: es una primitiva AEAD estándar.
+- **Clave:** `CONVOCATION_CODE_ENCRYPTION_KEY` (32 bytes en Base64 URL-safe).
+  - Es obligatoria: la aplicación no arranca sin ella.
+  - Se valida su longitud.
+  - Vive solo en el entorno o en `.env`, nunca en PostgreSQL ni en Git.
+  - Las migraciones la reciben en memoria a través de `env.py`.
+- **Nonce:** 96 bits aleatorios en cada cifrado, así que el mismo código cifrado dos veces da textos distintos.
+- **AAD:** el id de la convocatoria. El texto cifrado queda ligado a su fila: copiado a otra fila, no se descifra.
+- **Integridad:** si alguien altera el valor, el ingreso falla (401). El endpoint del docente responde 409 "regenérelo", y regenerar repara la convocatoria.
+- **Ingreso:** como el texto cifrado es aleatorio, no se busca el código por igualdad. Se cargan las convocatorias del correo indicado (pocas por estudiante), se descifran y se comparan en tiempo constante.
+- **Unicidad, atómica:** se eliminó `UNIQUE (codigo_autorizacion)`, porque no tiene sentido sobre texto cifrado. Basta con que el código no se repita entre las convocatorias de un mismo estudiante.
+  - Antes de generar o regenerar, el servicio toma `pg_advisory_xact_lock` por estudiante, en orden de id para evitar interbloqueos. Así, leer sus códigos y escribir el nuevo es atómico, incluso con convocatorias simultáneas en sesiones distintas.
+  - Una prueba de control demuestra que, sin el bloqueo, dos transacciones concurrentes asignaban el mismo código.
+- **Revocación:** la huella `cod` del token es un HMAC del valor *cifrado*. Al regenerar, cambia el cifrado y los tokens anteriores dejan de valer, sin descifrar en cada petición.
+- **Módulo 6:** obtendrá el código con `descifrar_codigo(convocatoria.codigo_autorizacion, convocatoria.id)`. Los eventos siguen sin transportar códigos.
+- **Cambio de modelo, justificado:** la columna conserva su nombre y su propósito (el código de la convocatoria), pero pasa a `VARCHAR(100)` porque guarda el cifrado.
+- **Pendiente:** la rotación de clave. El prefijo `v1` permite introducir una versión `v2` con otra clave y un comando de recifrado.
+
+Siguen vigentes las demás protecciones:
+
+1. Un código solo sirve con el correo de su estudiante y dentro de la ventana de ingreso.
+2. Limitación de intentos fallidos.
+3. Regeneración ante cualquier sospecha.
+4. Nunca aparece en logs, excepciones, eventos ni listados.
+5. La consulta del código se puede desactivar con `CONVOCATION_CODE_RETRIEVAL_ENABLED=false`.
+
+### Autenticación de estudiantes
+
+`POST /api/v1/auth/student/login` con `{correo, codigo}`:
+
+1. **Limitación de intentos:** bloquea con 429 y `Retry-After` tras 5 fallos por correo o 30 por IP en 15 minutos. Es configurable y el bloqueo se aplica incluso si el código es correcto.
+2. **Búsqueda:** las convocatorias del estudiante con ese correo. Sus códigos se descifran y se comparan en tiempo constante.
+3. **Respuesta genérica:** correo inexistente, usuario no estudiante, código incorrecto o código de otro estudiante dan **el mismo 401**, "Correo o código de acceso incorrectos.".
+4. **Motivos concretos (403), solo con credenciales correctas:** cuenta desactivada, sesión no iniciada, sesión finalizada, ventana programada terminada (`ahora ≥ fin`, aunque siga EN_CURSO) o plazo de ingreso vencido.
+5. **Límite de ingreso:** `inicio + (fin - inicio) / 2`, calculado solo con el reloj del servidor. El instante exacto del límite se permite. No expulsa a quien ya había ingresado.
+6. **Token:** `type = "student"`, firmado con la infraestructura JWT del módulo 1.
+   - Claims: `sub` (estudiante), `conv`, `ses`, `ver` (la `version_token` del usuario) y `cod` (un HMAC del código cifrado vigente).
+   - Expiración de **seguridad**: `STUDENT_TOKEN_EXPIRE_MINUTES` (300 por defecto), independiente de `tiempo_max_min`.
+
+El token **no sirve** en ningún endpoint administrativo ni docente, porque `decode_access_token` exige `type = "access"`.
+Por la misma razón, un token de personal no sirve como token estudiantil. En cada petición estudiantil se comprueba contra
+la base de datos que:
+
+- la convocatoria sigue existiendo y pertenece al estudiante y a la sesión del token;
+- el código no se regeneró (la huella `cod` coincide);
+- la cuenta sigue activa, es ESTUDIANTE y su `version_token` no cambió;
+- la sesión está EN_CURSO;
+- la sesión de la ruta es la del token. Si no lo es, responde 403.
+
+**Tres conceptos temporales distintos:**
+
+| Concepto | Qué lo determina | Quién lo controla |
+|---|---|---|
+| Estado administrativo | `sesion.estado` (SIN_INICIAR, EN_CURSO, FINALIZADO) | El docente (iniciar, finalizar) y el cierre automático (`fin + 24 h`) |
+| Ventana de ingreso | EN_CURSO **y** `inicio ≤ ahora ≤ limite_ingreso` (siempre antes de `fin`) | Módulo 3, con el reloj del servidor |
+| Duración de una participación | `participacion.inicio + sesion.tiempo_max_min` | Módulo 4 |
+| Expiración del token | `STUDENT_TOKEN_EXPIRE_MINUTES` | Seguridad, no reglas académicas |
+
+- Una sesión que sigue EN_CURSO después de `fin` (a la espera del cierre automático) **no admite ingresos nuevos**: el login responde 403 "ventana programada terminó". El plazo de 24 horas solo afecta al estado administrativo y no amplía la ventana de ingreso.
+- Un token ya emitido sigue *autenticando* mientras la sesión esté EN_CURSO, aunque sea después de `fin`. Pero `GET /student/sessions/{id}` informa `puede_iniciar_participacion: false`.
+
+**Cómo usará el módulo 4 esta autenticación:**
+
+1. Sus endpoints dependerán de `AccesoEstudiantilDep`: estudiante, convocatoria y sesión ya validados y no revocados.
+2. Al crear cada `participacion`, llamará a `acceso.asegurar_inicio_participacion(ahora)`. Aplica exactamente las reglas de un ingreso nuevo: EN_CURSO y dentro de la ventana; si no se cumplen, responde 403.
+3. Guardará `participacion.inicio` con el reloj del servidor, y el temporizador será `participacion.inicio + sesion.tiempo_max_min`, nunca la expiración del token.
+4. Contará los intentos consumidos frente a `convocatoria.intentos_autorizados`.
+5. **Pendiente de decisión:** si una participación iniciada dentro de la ventana puede continuar después de `sesion.fin`, y cómo se reautentica un estudiante cuyo token expira durante una participación cuando la ventana de ingreso ya cerró.
+
+**Alta de estudiantes (extensión del módulo 1):** el módulo 1 no tenía cómo crear cuentas ESTUDIANTE. Se añadió:
+
+- `POST /api/v1/users/students`, solo para administradores: crea el estudiante con `clave_hash` nulo, como ya permitía el modelo;
+- `EstudianteCreate`, que rechaza el campo `clave`;
+- `UsuarioService.create_estudiante`.
+
+No existe registro público. El login con contraseña sigue rechazando a los estudiantes.
+
+### Cierre automático
+
+- La regla está en `CierreSesionesService`: una sesión SIN_INICIAR o EN_CURSO se finaliza cuando `ahora ≥ fin + SESSION_AUTO_CLOSE_HOURS` (24 h por defecto, configurable).
+- El servicio busca las candidatas con el índice `(estado, fin)`.
+- Cada una se procesa en su propia transacción con `SELECT … FOR UPDATE SKIP LOCKED`, y pide la transición al State, que no hace nada si la sesión ya está FINALIZADA.
+- Resultado: es seguro ante ejecuciones concurrentes y nunca finaliza dos veces la misma sesión.
+- Se registra en el log y se publica un evento `SESION_FINALIZADA` con `origen=cierre_automatico`.
+
+La ejecución está separada de la lógica de negocio y no depende de peticiones HTTP:
+
+```powershell
+python -m app.workers.session_expiration                 # una pasada (cron / Programador de tareas)
+python -m app.workers.session_expiration --intervalo 300 # bucle propio cada 5 minutos
+```
+
+### Eventos para el módulo 6
+
+`eventos.PublicadorEventosSesion` es un puerto con una única implementación nula, que registra el evento en el log. Los
+servicios publican **después del commit**:
+
+- `SESION_PROGRAMADA`, `SESION_MODIFICADA`, `SESION_INICIADA`, `SESION_FINALIZADA`;
+- `CONVOCATORIA_CREADA`, `CONVOCATORIA_RETIRADA`, `CODIGO_REGENERADO`, `INTENTOS_MODIFICADOS`.
+
+Los eventos llevan identificadores, nunca códigos. No es Observer ni Adapter: esos patrones los implementará el módulo 6 detrás de este puerto.
+
+### Endpoints del módulo 3 (`/api/v1`)
+
+| Método | Ruta | Acceso | Descripción |
+|---|---|---|---|
+| POST | `/users/students` | Admin | Alta de estudiante sin contraseña (extensión del módulo 1) |
+| POST | `/academic-spaces` | Admin | Crear espacio |
+| GET | `/academic-spaces?activo=` | Admin / Docente | Listar (los docentes solo ven los activos) |
+| GET | `/academic-spaces/{id}` | Admin / Docente | Consultar |
+| PATCH | `/academic-spaces/{id}` | Admin | Actualizar nombre y periodo |
+| PATCH | `/academic-spaces/{id}/status` | Admin | Activar o desactivar |
+| POST | `/sessions` | Docente | Programar con convocatorias (`estudiantes`: correos) |
+| GET | `/sessions?estado=` | Docente | Listar mis sesiones |
+| GET | `/sessions/{id}` | Docente responsable | Consultar (incluye `limite_ingreso` y `total_convocatorias`) |
+| PATCH | `/sessions/{id}` | Docente responsable | Modificar la programación |
+| POST | `/sessions/{id}/start` | Docente responsable | Iniciar |
+| POST | `/sessions/{id}/finish` | Docente responsable | Finalizar |
+| POST / GET | `/sessions/{id}/convocations` | Docente responsable | Convocar / listar (sin códigos) |
+| GET / DELETE | `/sessions/{id}/convocations/{cid}` | Docente responsable | Consultar / retirar |
+| PATCH | `/sessions/{id}/convocations/{cid}/attempts` | Docente responsable | Aumentar intentos (`{intentos_autorizados, motivo}`) |
+| POST | `/sessions/{id}/convocations/{cid}/regenerate-code` | Docente responsable | Regenerar (`{motivo}`); devuelve el nuevo código |
+| GET | `/sessions/{id}/convocations/{cid}/code` | Docente responsable | Consultar el código (provisional, hasta el módulo 6) |
+| POST | `/auth/student/login` | Público (limitado) | Ingreso con correo y código |
+| GET | `/student/sessions/{id}` | Token estudiantil | Datos de la sesión concedida (verifica alcance y vigencia) |
+
+Cambios respecto de la propuesta:
+
+- se añadieron `/code`, `/student/sessions/{id}` y `/users/students`;
+- las rutas de espacios usan `{space_id}`.
+
+### Decisiones
+
+1. **Estudiantes:** los crea el administrador (`POST /users/students`) sin contraseña. Los docentes los convocan por correo institucional.
+2. **Códigos:**
+   - aleatorios con CSPRNG, con 60 bits de entropía;
+   - **cifrados en reposo con AES-256-GCM**, con la clave en el entorno;
+   - recuperables solo con esa clave, por el endpoint del docente responsable y, en el futuro, por el módulo 6;
+   - protegidos además con limitación de intentos y una huella HMAC en el token.
+3. **Invalidación de accesos:** cada petición estudiantil se verifica contra la BD. Retirar la convocatoria, regenerar el código, desactivar la cuenta, cambiar su `version_token` o salir del estado EN_CURSO deja sin efecto los tokens anteriores.
+4. **Modificación de sesiones:** en SIN_INICIAR se puede cambiar todo, revalidando caso, espacio, tiempo y fechas. En EN_CURSO, solo `lugar` y `mensaje`. En FINALIZADO, nada.
+5. **Inicio manual (confirmado):** solo por una acción autorizada del docente responsable, entre `inicio` (incluido) y `fin` (excluido). La sesión no se inicia sola: los estudiantes ingresan cuando el docente la abre.
+6. **Cierre automático:** `fin + 24 h` (configurable), con el comando del worker, por State, idempotente y con `SKIP LOCKED`.
+7. **Estudiantes retirados (confirmado):** revocación **lógica** (`revocada_en`, migración 0007), no borrado. Pierden el acceso de inmediato: el login responde 403 "revocada" y los tokens existentes, 401. Se permite retirar en SIN_INICIAR y EN_CURSO, incluso después de la ventana de ingreso, y no en FINALIZADO, para conservar el registro histórico. Motivo: la revocación de un acceso ya concedido solo puede ocurrir con la sesión EN_CURSO (por ejemplo, ante una suplantación detectada durante la actividad).
+8. **Intentos excepcionales (confirmado):** solo aumentar, con un motivo obligatorio, que queda en el log y en el evento. Se permite mientras la sesión no esté FINALIZADA. Su consumo efectivo frente a las participaciones lo controlará el módulo 4.
+8b. **Nuevas convocatorias (confirmado):** se rechazan (409) cuando la ventana de ingreso ya terminó (`ahora > limite_ingreso`), en SIN_INICIAR o EN_CURSO, y también al programar una sesión con estudiantes en esa situación. Un estudiante convocado tarde no podría ingresar, así que no hay justificación funcional para permitirlo. Retirar, aumentar intentos y regenerar códigos de convocatorias existentes sí se permite hasta FINALIZADO.
+9. **Pendiente:**
+   - módulo 4: participaciones, conteo de intentos consumidos y control de `tiempo_max_min` por estudiante;
+   - módulo 6: envío de códigos por correo e implementación real del puerto de eventos.
+10. **No alteración de módulos anteriores:**
+    - el módulo 2 solo se consulta (`CasoRepository.get_owned`, `CicloVidaCaso.admite_programacion`), y sus casos están protegidos con FK RESTRICT;
+    - del módulo 1 solo se añadió el alta de estudiantes;
+    - el JWT se refactorizó en helpers genéricos (`encode_token` / `decode_token`) sin cambiar el comportamiento de los tokens de acceso;
+    - las 242 pruebas anteriores siguen pasando. Se ajustó una que fijaba `0004` como revisión head.
+11. **Reglas añadidas, con justificación:**
+    - la hora de fin debe ser futura al programar o reprogramar, porque una sesión ya vencida nunca podría iniciarse;
+    - los motivos obligatorios al regenerar códigos y aumentar intentos (confirmados) son una exigencia de trazabilidad para operaciones excepcionales;
+    - una sesión SIN_INICIAR no se puede finalizar manualmente, porque no figura entre las transiciones; solo el cierre automático la finaliza.
+12. **Administradores y sesiones:** no tienen acceso, igual que con los casos en el módulo 2.
+
+### Integración con el módulo 4 (Participaciones)
+
+| Necesidad | Cómo resolverla |
+|---|---|
+| **Verificar una convocatoria activa** | En los endpoints estudiantiles, depender de `AccesoEstudiantilDep`: entrega `AccesoEstudiantil(estudiante, convocatoria, sesion)` ya validado contra la BD. Comprueba la firma y el tipo `student`, que la convocatoria exista, sea **activa** y pertenezca al estudiante y a la sesión de la ruta, que el código vigente coincida, que la cuenta esté activa con la misma `version_token` y que la sesión esté EN_CURSO. Fuera de una petición: `convocatoria.activa`. |
+| **Identificar una convocatoria revocada** | `convocatoria.revocada_en IS NOT NULL` (propiedad `convocatoria.activa`). Una participación existente sigue apuntando a su convocatoria aunque esta se revoque, porque la fila nunca se borra; la FK `participacion.convocatoria_id` debe usar **RESTRICT**. |
+| **Consultar los intentos autorizados** | `acceso.convocatoria.intentos_autorizados`. El módulo 4 contará las participaciones de la convocatoria y rechazará una nueva si `consumidos >= intentos_autorizados`. El aumento excepcional ya existe (`PATCH …/attempts`). |
+| **Iniciar una participación sin duplicar validaciones** | Llamar a `acceso.asegurar_inicio_participacion(reloj.ahora())`, que delega en el State de la sesión: EN_CURSO e `inicio ≤ ahora ≤ limite_ingreso` (< `fin`). No hay que repetir esas comprobaciones ni las de revocación o cuenta, que ya hizo `AccesoEstudiantilDep`. Al módulo 4 solo le quedan sus reglas propias (intentos consumidos, una participación abierta a la vez), dentro de una transacción que bloquee la fila de la convocatoria (`SELECT … FOR UPDATE`) para que dos inicios simultáneos no consuman el mismo intento. |
+| **Recuperar una participación cuando expira el JWT** | Implementar `PoliticaReingreso.permite_reingreso(convocatoria, ahora)` (por ejemplo: "tiene una participación abierta y `participacion.inicio + tiempo_max_min > ahora`") y registrarla sustituyendo la dependencia `get_politica_reingreso`. El login la consulta **solo** si la ventana de ingreso ya cerró y la sesión sigue EN_CURSO. Nunca para sesiones sin iniciar o finalizadas, convocatorias revocadas o cuentas desactivadas. El token emitido así **no permite nuevos intentos**, porque `asegurar_inicio_participacion` sigue rechazando fuera de la ventana. Por defecto (`SinReingreso`) no hay reingreso. |
+| **Temporizador académico** | `participacion.inicio` (reloj del servidor) + `sesion.tiempo_max_min`. Nunca la expiración del JWT (`STUDENT_TOKEN_EXPIRE_MINUTES`, que es de seguridad). |
+
+**Decisión temporal pendiente para el módulo 4:** si una participación iniciada válidamente (antes del límite de
+ingreso) puede continuar después de `sesion.fin` hasta agotar su `tiempo_max_min`, o si debe cortarse en `sesion.fin`.
+Por ejemplo, con una sesión de 08:00 a 10:00, un ingreso a las 09:00 y `tiempo_max_min = 90`, el tiempo individual
+terminaría a las 10:30, después del fin programado. Lo que el módulo 3 ya garantiza:
+
+- no hay ingresos nuevos después del límite de ingreso;
+- el token sigue autenticando mientras la sesión esté EN_CURSO (hasta el cierre automático, `fin + 24 h`);
+- el cierre automático finaliza el estado administrativo, y desde entonces los tokens dejan de autorizar.
+
+### Limitaciones
+
+- El limitador de intentos vive en memoria del proceso. Con varios workers o réplicas, debe sustituirse por un almacén compartido (p. ej., Redis) con la misma interfaz.
+- La entrega de códigos es manual (docente) hasta el módulo 6.
+- No hay rotación de la clave de cifrado de códigos (el formato `v1` la prepara).
+- Los eventos solo se registran en el log hasta el módulo 6.
+
 ## Pendiente para módulos posteriores
 
-- **Módulo 3:** seleccionar solo casos publicados al programar sesiones (usar `CicloVidaCaso(caso).admite_programacion()`) y añadir la FK sesión → caso con `ON DELETE RESTRICT`.
-- **Módulo 4:** una vista de caso para estudiantes **sin** `es_correcta` ni `justificacion`. `OpcionRead` es solo para autores.
 - **Módulo 5:** cálculo de calificaciones con `niveles`, `peso` y `escala_max`.
-- **Módulo 3:** acceso estudiantil con correo institucional y código de convocatoria. El rol `ESTUDIANTE` y su fila sin contraseña ya están soportados; el endpoint de acceso se añadirá en `routers/auth_router.py` usando la entidad `convocatoria`.
-- *Refresh tokens*, "cerrar todas las sesiones" a petición del usuario y limitación de intentos de login. No se pidieron en este módulo.
+- **Módulo 4:** entidad `Participacion` (FK a `convocatoria` con RESTRICT), conteo de intentos frente a `intentos_autorizados`, control de `tiempo_max_min` por estudiante, política de reingreso (`PoliticaReingreso`) y vista del caso sin `es_correcta` ni `justificacion` (`OpcionRead` es solo para autores). Ver "Integración con el módulo 4".
+- **Módulo 6:** envío de códigos por correo (y desactivar `CONVOCATION_CODE_RETRIEVAL_ENABLED`) e implementación de `PublicadorEventosSesion`.
+- *Refresh tokens*, "cerrar todas las sesiones" a petición del usuario y limitación de intentos en el login con contraseña (el ingreso estudiantil ya la tiene).

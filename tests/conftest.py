@@ -4,8 +4,10 @@ Las pruebas usan una base PostgreSQL EXCLUSIVA (TEST_DATABASE_URL), cuyo esquema
 se crea ejecutando las migraciones de Alembic. Nunca se usa SQLite.
 """
 
+import base64
 import os
 import secrets
+from datetime import UTC, datetime, timedelta
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -40,6 +42,7 @@ _test_db_url: str = _env.TEST_DATABASE_URL  # type: ignore[assignment]
 os.environ["DATABASE_URL"] = _test_db_url
 os.environ["ENVIRONMENT"] = "testing"
 os.environ.setdefault("JWT_SECRET_KEY", secrets.token_urlsafe(48))
+os.environ.setdefault("CONVOCATION_CODE_ENCRYPTION_KEY", base64.urlsafe_b64encode(os.urandom(32)).decode())
 
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
@@ -51,6 +54,7 @@ from app.core import security  # noqa: E402
 from app.core.database import SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.modules.auth.models import RolUsuario, Usuario  # noqa: E402
+from app.modules.sessions.security import get_limitador  # noqa: E402
 
 DEFAULT_PASSWORD = "ClaveSegura#2026"
 
@@ -83,8 +87,10 @@ def migrated_database() -> Iterator[None]:
 def clean_tables() -> Iterator[None]:
     yield
     with engine.begin() as conn:
-        # CASCADE vacía también las tablas que dependen de usuario (casos y su contenido, módulo 2).
-        conn.execute(text("TRUNCATE TABLE usuario CASCADE"))
+        # CASCADE vacía también las tablas dependientes (casos, sesiones y convocatorias).
+        conn.execute(text("TRUNCATE TABLE usuario, espacio_academico CASCADE"))
+    # El limitador de intentos estudiantiles vive en memoria: se vacía entre pruebas.
+    get_limitador().reiniciar()
 
 
 @pytest.fixture
@@ -182,3 +188,56 @@ def estudiante_headers(make_user: Callable[..., Usuario]) -> dict[str, str]:
     # Los estudiantes aún no pueden iniciar sesión (módulo 3): se emite un token válido directamente.
     estudiante = make_user(RolUsuario.ESTUDIANTE, clave=None)
     return bearer(security.create_access_token(estudiante.id, estudiante.rol.value, estudiante.version_token))
+
+
+# --- Módulo 3 -----------------------------------------------------------------
+
+
+class RelojFijo:
+    """Reloj controlable para las reglas temporales (inicio, límite de ingreso, cierre automático)."""
+
+    def __init__(self, actual: datetime) -> None:
+        self.actual = actual
+
+    def ahora(self) -> datetime:
+        return self.actual
+
+    def avanzar(self, **delta: float) -> None:
+        self.actual += timedelta(**delta)
+
+
+@pytest.fixture
+def reloj() -> Iterator[RelojFijo]:
+    """Sustituye el reloj de la aplicación. Por defecto: 3 de noviembre de 2026, 07:00 UTC."""
+    from app.core.clock import get_reloj
+
+    fijo = RelojFijo(datetime(2026, 11, 3, 7, 0, tzinfo=UTC))
+    app.dependency_overrides[get_reloj] = lambda: fijo
+    yield fijo
+    app.dependency_overrides.pop(get_reloj, None)
+
+
+@pytest.fixture
+def espacio(db: Session):
+    from app.modules.sessions.models import EspacioAcademico
+
+    nuevo = EspacioAcademico(nombre="Psicología Social I", periodo="2026-2", activo=True)
+    db.add(nuevo)
+    db.commit()
+    return nuevo
+
+
+@pytest.fixture
+def caso_publicado(client: TestClient, creador_headers: dict[str, str]) -> dict:
+    """Caso del docente `creador`, publicado (tiempo estimado: 45 min)."""
+    from tests.cases_helpers import crear_caso_completo, publicar
+
+    caso = crear_caso_completo(client, creador_headers)
+    response = publicar(client, creador_headers, caso["id"])
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.fixture
+def estudiantes(make_user: Callable[..., Usuario]) -> list[Usuario]:
+    return [make_user(RolUsuario.ESTUDIANTE, clave=None) for _ in range(3)]

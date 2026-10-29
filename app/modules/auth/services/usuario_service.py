@@ -9,7 +9,7 @@ from app.core import security
 from app.core.exceptions import BusinessRuleError, ConflictError, NotFoundError, PermissionDeniedError
 from app.modules.auth.models import RolUsuario, Usuario
 from app.modules.auth.repositories import UsuarioRepository
-from app.modules.auth.schemas import DocenteCreate, UsuarioUpdate
+from app.modules.auth.schemas import DocenteCreate, EstudianteCreate, UsuarioUpdate
 
 DUPLICATE_EMAIL_MESSAGE = "Ya existe un usuario registrado con ese correo."
 DUPLICATE_CODE_MESSAGE = "Ya existe un usuario registrado con ese código institucional."
@@ -37,6 +37,22 @@ class UsuarioService:
             rol=RolUsuario.DOCENTE,
             codigo_institucional=data.codigo_institucional,
         )
+
+    def create_estudiante(self, data: EstudianteCreate) -> Usuario:
+        """Alta administrativa de estudiantes (módulo 3). `clave_hash` queda nulo, como permite el modelo."""
+        self._ensure_unique(correo=data.correo, codigo_institucional=data.codigo_institucional)
+        usuario = Usuario(
+            nombre_completo=data.nombre_completo,
+            correo=data.correo,
+            clave_hash=None,
+            rol=RolUsuario.ESTUDIANTE,
+            codigo_institucional=data.codigo_institucional,
+            puede_crear_casos=False,
+            activo=True,
+        )
+        with self._transaction():
+            self._usuarios.add(usuario)
+        return usuario
 
     def create_admin(
         self, *, nombre_completo: str, correo: str, clave: str, codigo_institucional: str | None = None

@@ -8,6 +8,7 @@ from app.modules.auth.models import RolUsuario
 from app.modules.auth.schemas import (
     CasePermissionUpdate,
     DocenteCreate,
+    EstudianteCreate,
     MessageResponse,
     UsuarioList,
     UsuarioRead,
@@ -40,6 +41,19 @@ _NOT_FOUND = {404: {"model": MessageResponse, "description": "Usuario no encontr
 )
 def create_teacher(data: DocenteCreate, service: UsuarioServiceDep) -> UsuarioRead:
     return UsuarioRead.model_validate(service.create_docente(data))
+
+
+@router.post(
+    "/students",
+    response_model=UsuarioRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar un estudiante (sin contraseña)",
+    description="Los estudiantes no tienen contraseña: ingresan con el código de cada convocatoria "
+    "(POST /api/v1/auth/student/login). No existe registro público.",
+    responses={409: {"model": MessageResponse, "description": "Correo o código institucional duplicado."}},
+)
+def create_student(data: EstudianteCreate, service: UsuarioServiceDep) -> UsuarioRead:
+    return UsuarioRead.model_validate(service.create_estudiante(data))
 
 
 @router.get("", response_model=UsuarioList, summary="Listar usuarios")

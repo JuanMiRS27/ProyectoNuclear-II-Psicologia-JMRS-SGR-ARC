@@ -48,21 +48,47 @@ def password_needs_rehash(password_hash: str) -> bool:
     return _password_hasher.check_needs_rehash(password_hash)
 
 
+def encode_token(claims: dict[str, Any], token_type: str, expires_delta: timedelta) -> str:
+    """Firma un JWT con la clave y el algoritmo de la configuración.
+
+    `type` distingue el propósito del token: cada decodificador acepta solo su tipo,
+    de modo que un token de un propósito no sirve para otro.
+    """
+    settings = get_settings()
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {**claims, "type": token_type, "iat": now, "exp": now + expires_delta}
+    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+def decode_token(token: str, token_type: str, required_claims: list[str]) -> dict[str, Any]:
+    """Valida firma, algoritmo, expiración, claims obligatorios y tipo. Lanza `InvalidTokenError`."""
+    settings = get_settings()
+    try:
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            options={"require": ["sub", "exp", "iat", "type", *required_claims]},
+        )
+    except jwt.PyJWTError as exc:
+        raise InvalidTokenError() from exc
+    if payload["type"] != token_type:
+        raise InvalidTokenError()
+    return payload
+
+
+def entero_estricto(valor: Any) -> int:
+    """Claim entero (bool es subclase de int y se rechaza explícitamente)."""
+    if not isinstance(valor, int) or isinstance(valor, bool):
+        raise InvalidTokenError()
+    return valor
+
+
 def create_access_token(
     subject: uuid.UUID, role: str, token_version: int, expires_delta: timedelta | None = None
 ) -> str:
-    settings = get_settings()
-    now = datetime.now(UTC)
-    expire = now + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
-    payload: dict[str, Any] = {
-        "sub": str(subject),
-        "rol": role,
-        "ver": token_version,
-        "type": "access",
-        "iat": now,
-        "exp": expire,
-    }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    expira = expires_delta or timedelta(minutes=get_settings().ACCESS_TOKEN_EXPIRE_MINUTES)
+    return encode_token({"sub": str(subject), "rol": role, "ver": token_version}, "access", expira)
 
 
 def decode_access_token(token: str) -> AccessTokenClaims:
@@ -71,18 +97,8 @@ def decode_access_token(token: str) -> AccessTokenClaims:
     El claim `rol` es solo informativo: la autorización siempre se basa en el
     estado actual del usuario en la base de datos, incluida su `version_token`.
     """
-    settings = get_settings()
+    payload = decode_token(token, "access", ["ver"])
     try:
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM],
-            options={"require": ["sub", "exp", "iat", "type", "ver"]},
-        )
-        version = payload["ver"]
-        # bool es subclase de int: se excluye explícitamente.
-        if payload["type"] != "access" or not isinstance(version, int) or isinstance(version, bool):
-            raise InvalidTokenError()
-        return AccessTokenClaims(user_id=uuid.UUID(payload["sub"]), token_version=version)
-    except (jwt.PyJWTError, ValueError, TypeError) as exc:
+        return AccessTokenClaims(user_id=uuid.UUID(payload["sub"]), token_version=entero_estricto(payload["ver"]))
+    except (ValueError, TypeError, AttributeError) as exc:
         raise InvalidTokenError() from exc
