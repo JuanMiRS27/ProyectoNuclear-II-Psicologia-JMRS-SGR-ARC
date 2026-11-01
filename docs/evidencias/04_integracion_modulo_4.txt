@@ -1,0 +1,44 @@
+============================= test session starts =============================
+collecting ... collected 33 items
+
+tests/integration/test_modulo_4_api.py::test_inicio_responde_201_y_recuperacion_200_sin_cache PASSED [  3%]
+tests/integration/test_modulo_4_api.py::test_vista_inicial_del_intento PASSED [  6%]
+tests/integration/test_modulo_4_api.py::test_cuerpo_del_cliente_no_altera_el_inicio_del_intento PASSED [  9%]
+tests/integration/test_modulo_4_api.py::test_intentos_extra_numeran_y_conservan_el_historial PASSED [ 12%]
+tests/integration/test_modulo_4_api.py::test_token_estudiantil_ausente_o_de_otro_tipo PASSED [ 15%]
+tests/integration/test_modulo_4_api.py::test_token_de_otra_sesion_o_ruta_inexistente PASSED [ 18%]
+tests/integration/test_modulo_4_api.py::test_respuesta_persiste_y_actualiza_el_progreso PASSED [ 21%]
+tests/integration/test_modulo_4_api.py::test_cambiar_de_opcion_conserva_la_primera_marca_de_tiempo PASSED [ 24%]
+tests/integration/test_modulo_4_api.py::test_reintento_con_la_misma_opcion_no_es_una_modificacion PASSED [ 27%]
+tests/integration/test_modulo_4_api.py::test_eliminar_respuesta_es_idempotente PASSED [ 30%]
+tests/integration/test_modulo_4_api.py::test_seleccion_guardada_aparece_en_el_cuestionario PASSED [ 33%]
+tests/integration/test_modulo_4_api.py::test_respuesta_con_cuerpo_invalido[vacio] PASSED [ 36%]
+tests/integration/test_modulo_4_api.py::test_respuesta_con_cuerpo_invalido[mal-formado] PASSED [ 39%]
+tests/integration/test_modulo_4_api.py::test_respuesta_con_cuerpo_invalido[nulo] PASSED [ 42%]
+tests/integration/test_modulo_4_api.py::test_pregunta_inexistente_en_guardar_y_eliminar PASSED [ 45%]
+tests/integration/test_modulo_4_api.py::test_intento_inexistente_o_ajeno_en_lecturas[] PASSED [ 48%]
+tests/integration/test_modulo_4_api.py::test_intento_inexistente_o_ajeno_en_lecturas[/questionnaire] PASSED [ 51%]
+tests/integration/test_modulo_4_api.py::test_intento_inexistente_o_ajeno_en_lecturas[/answers] PASSED [ 54%]
+tests/integration/test_modulo_4_api.py::test_finalizar_intento_ajeno PASSED [ 57%]
+tests/integration/test_modulo_4_api.py::test_finalizar_conserva_respuestas_y_bloquea_cambios PASSED [ 60%]
+tests/integration/test_modulo_4_api.py::test_intento_cerrado_sigue_siendo_consultable PASSED [ 63%]
+tests/integration/test_modulo_4_api.py::test_listar_intentos_expira_el_vencido PASSED [ 66%]
+tests/integration/test_modulo_4_api.py::test_listar_respuestas_expira_el_vencido PASSED [ 69%]
+tests/integration/test_modulo_4_api.py::test_eliminar_respuesta_tras_agotar_el_tiempo PASSED [ 72%]
+tests/integration/test_modulo_4_api.py::test_revocacion_durante_el_intento_corta_el_token PASSED [ 75%]
+tests/integration/test_modulo_4_api.py::test_fin_de_sesion_cierra_intentos_en_una_sola_operacion PASSED [ 78%]
+tests/integration/test_modulo_4_api.py::test_estudiante_no_puede_entrar_tras_el_cierre_de_sesion PASSED [ 81%]
+tests/integration/test_modulo_4_api.py::test_worker_real_expira_con_el_instante_del_limite PASSED [ 84%]
+tests/integration/test_modulo_4_api.py::test_cierre_no_genera_nota_ni_retroalimentacion PASSED [ 87%]
+tests/integration/test_modulo_4_api.py::test_no_existen_rutas_de_calificacion PASSED [ 90%]
+tests/integration/test_modulo_4_api.py::test_consulta_para_evaluacion_con_datos_reales PASSED [ 93%]
+tests/integration/test_modulo_4_api.py::test_convocatoria_revocada_no_cuenta_como_ausencia PASSED [ 96%]
+tests/integration/test_modulo_4_api.py::test_token_expirado_de_estudiante_no_interrumpe_el_temporizador PASSED [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\Slime\Desktop\Proyecto  Nuclear- II\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 33 passed, 1 warning in 15.10s ========================

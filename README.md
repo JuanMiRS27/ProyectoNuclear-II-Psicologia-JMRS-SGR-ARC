@@ -127,6 +127,29 @@ condiciones no se cumple:
 
 Las pruebas de concurrencia (`tests/test_concurrency.py`) usan hilos con conexiones independientes contra la misma base.
 
+Organización de la suite:
+
+| Ubicación | Tipo | Requiere PostgreSQL |
+|---|---|---|
+| `tests/unit/` | Unitarias aisladas (por módulo, patrones y núcleo). Cualquier conexión a la base hace fallar la prueba. | No: basta una `TEST_DATABASE_URL` válida, aunque no haya servidor. |
+| `tests/integration/` | API + servicios + persistencia, por módulo, y flujos completos. | Sí |
+| `tests/test_*.py` | Suite de regresión de cada módulo (API, migraciones, disparadores y concurrencia). | Sí |
+
+```powershell
+pytest tests/unit                                                             # unitarias
+pytest tests/integration                                                      # integración
+pytest --cov=app --cov-report=term-missing --cov-report=html                  # todo, con cobertura
+```
+
+Si no hay PostgreSQL local, se puede usar un contenedor desechable (sin persistencia y accesible solo desde este equipo):
+
+```powershell
+docker run -d --rm --name iter_animi_pg_test -e POSTGRES_USER=simulador_test -e POSTGRES_PASSWORD=solo_pruebas_local -e POSTGRES_DB=simulador_psicologia_test -p 127.0.0.1:55432:5432 --tmpfs /var/lib/postgresql/data postgres:17-alpine
+$env:TEST_DATABASE_URL = "postgresql+psycopg://simulador_test:solo_pruebas_local@127.0.0.1:55432/simulador_psicologia_test"
+```
+
+El detalle de resultados y defectos está en [`docs/REPORTE_PRUEBAS_MODULOS_1_4.md`](docs/REPORTE_PRUEBAS_MODULOS_1_4.md).
+
 ## API (`/api/v1`)
 
 | Método | Endpoint | Acceso | Descripción |

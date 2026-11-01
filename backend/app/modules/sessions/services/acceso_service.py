@@ -142,7 +142,7 @@ class AccesoEstudiantilService(ServicioSesionesBase):
             except CodigoCifradoInvalidoError:
                 logger.error("codigo cifrado invalido convocatoria=%s", convocatoria.id)
                 continue
-            if hmac.compare_digest(claro, codigo):
+            if hmac.compare_digest(claro.encode(), codigo.encode()):  # bytes: el código recibido puede no ser ASCII
                 encontrada = convocatoria
         return encontrada
 

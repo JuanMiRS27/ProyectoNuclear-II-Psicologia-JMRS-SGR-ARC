@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 
+from app.core.database import OFFSET_MAXIMO
 from app.modules.cases.dependencies import CasoServiceDep, Editor, Lector
 from app.modules.cases.dsl import CaseDSLDocument
 from app.modules.cases.models import EstadoCasoEnum
@@ -35,7 +36,7 @@ def list_cases(
     autor: Lector,
     service: CasoServiceDep,
     estado: EstadoCasoEnum | None = None,
-    skip: Annotated[int, Query(ge=0)] = 0,
+    skip: Annotated[int, Query(ge=0, le=OFFSET_MAXIMO)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> CasoList:
     casos, total = service.listar(autor, estado=estado, skip=skip, limit=limit)

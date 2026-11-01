@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
+from app.core.database import OFFSET_MAXIMO
 from app.modules.auth.dependencies import AdminUser
 from app.modules.auth.schemas import MessageResponse
 from app.modules.sessions.dependencies import AdminODocente, EspacioServiceDep
@@ -33,7 +34,7 @@ def list_spaces(
     usuario: AdminODocente,
     service: EspacioServiceDep,
     activo: bool | None = None,
-    skip: Annotated[int, Query(ge=0)] = 0,
+    skip: Annotated[int, Query(ge=0, le=OFFSET_MAXIMO)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> EspacioList:
     espacios, total = service.listar(usuario, activo=activo, skip=skip, limit=limit)
