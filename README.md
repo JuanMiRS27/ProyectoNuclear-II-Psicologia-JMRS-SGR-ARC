@@ -1,6 +1,8 @@
 # Iter Animi — Simulador de Psicología Social (Backend)
 
-Monolito modular en **FastAPI + PostgreSQL**. Estado actual: módulos **1 — Autenticación y Usuarios**, **2 — Gestión de Casos Académicos** y **3 — Sesiones y Convocatorias** (integrados en `main`), y **4 — Participaciones** (en revisión).
+Monolito modular en **FastAPI + PostgreSQL**. Estado actual: módulos **1 — Autenticación y Usuarios**, **2 — Gestión de Casos Académicos** y **3 — Sesiones y Convocatorias**, y **4 — Participaciones**.
+
+> El código está en `backend/`: ejecute desde esa carpeta los comandos de este documento.
 
 | Componente | Versión |
 |---|---|
