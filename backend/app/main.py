@@ -1,36 +1,38 @@
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 
-from app.core.db import SesionLocal
-from app.core.errores import ErrorDominio, manejar_error_dominio
-from app.notificaciones.correo import obtener_servicio_correo
-from app.notificaciones.eventos import publicador_eventos
-from app.notificaciones.observadores import registrar_observadores
-from app.usuarios.router import router_auth, router_espacios, router_usuarios
+from app.bootstrap import configurar_integraciones
+from app.core.config import get_settings
+from app.core.exceptions import register_exception_handlers
+from app.modules.auth.routers import router as auth_module_router
+from app.modules.cases.routers import router as cases_module_router
+from app.modules.participations.routers import router as participations_module_router
+from app.modules.sessions.routers import router as sessions_module_router
 
 
-@asynccontextmanager
-async def ciclo_de_vida(_: FastAPI):
-    registrar_observadores(publicador_eventos, SesionLocal, obtener_servicio_correo())
-    yield
-    publicador_eventos.limpiar()
+def create_app() -> FastAPI:
+    settings = get_settings()
+    configurar_integraciones()
+    app = FastAPI(
+        title=settings.APP_NAME,
+        version="0.1.0",
+        description="Backend del Simulador de Psicología Social. Módulo 1: Autenticación y Gestión de Usuarios.",
+        docs_url="/docs" if settings.docs_enabled else None,
+        redoc_url="/redoc" if settings.docs_enabled else None,
+        openapi_url="/openapi.json" if settings.docs_enabled else None,
+    )
+    register_exception_handlers(app)
+
+    # Cada módulo aporta su router; los módulos 2-7 se registrarán aquí.
+    app.include_router(auth_module_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(cases_module_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(sessions_module_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(participations_module_router, prefix=settings.API_V1_PREFIX)
+
+    @app.get("/health", tags=["Sistema"], summary="Comprobación de disponibilidad")
+    def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    return app
 
 
-app = FastAPI(
-    title="Simulador de Psicología Social",
-    description="API del Proyecto Nuclear II",
-    version="0.1.0",
-    lifespan=ciclo_de_vida,
-)
-
-app.add_exception_handler(ErrorDominio, manejar_error_dominio)
-
-app.include_router(router_auth)
-app.include_router(router_usuarios)
-app.include_router(router_espacios)
-
-
-@app.get("/health", tags=["sistema"])
-def health() -> dict[str, str]:
-    return {"estado": "ok"}
+app = create_app()
