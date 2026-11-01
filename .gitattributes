@@ -1,2 +1,0 @@
-# Los scripts de shell deben conservar finales de línea LF para ejecutarse en el contenedor
-*.sh text eol=lf
