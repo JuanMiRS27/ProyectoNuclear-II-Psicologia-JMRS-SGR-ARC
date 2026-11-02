@@ -6,7 +6,7 @@ import uuid
 from app.modules.participations.policies import temporizador
 from app.modules.participations.services.base import ServicioParticipacionesBase
 
-logger = logging.getLogger("iter_animi.participaciones.expiracion")
+logger = logging.getLogger("inter_nos.participaciones.expiracion")
 
 TAMANO_LOTE = 500
 

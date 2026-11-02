@@ -7,3 +7,10 @@ requires-python = ">=3.12"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = ["\\.\\.\\.$", "if __name__ == .__main__.:"]

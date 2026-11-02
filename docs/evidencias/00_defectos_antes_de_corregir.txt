@@ -1,0 +1,89 @@
+........................................................................ [  8%]
+........................................................................ [ 16%]
+........................................................................ [ 24%]
+........................................................................ [ 32%]
+.......................................FF............................... [ 41%]
+..............x......................................................... [ 49%]
+.F...................................................................... [ 57%]
+........................................................................ [ 65%]
+........................................................................ [ 73%]
+........................................................................ [ 82%]
+.......FFFFxx........................................................... [ 90%]
+.........................F.....................F........................ [ 98%]
+.............                                                            [100%]
+================================== FAILURES ===================================
+E   OverflowError: date value out of range
+C:\Users\Slime\Desktop\Proyecto  Nuclear- II\app\modules\sessions\schemas\__init__.py:20: OverflowError: date value out of range
+E   OverflowError: date value out of range
+C:\Users\Slime\Desktop\Proyecto  Nuclear- II\app\modules\sessions\schemas\__init__.py:20: OverflowError: date value out of range
+E   TypeError: comparing strings with non-ASCII characters is not supported
+C:\Users\Slime\Desktop\Proyecto  Nuclear- II\app\modules\sessions\services\acceso_service.py:145: TypeError: comparing strings with non-ASCII characters is not supported
+E   psycopg.errors.NumericValueOutOfRange: bigint out of range
+
+The above exception was the direct cause of the following exception:
+E   sqlalchemy.exc.DataError: (psycopg.errors.NumericValueOutOfRange) bigint out of range
+    [SQL: SELECT usuario.id, usuario.nombre_completo, usuario.correo, usuario.clave_hash, usuario.rol, usuario.codigo_institucional, usuario.puede_crear_casos, usuario.activo, usuario.creado_en, usuario.version_token 
+    FROM usuario ORDER BY usuario.creado_en, usuario.id 
+     LIMIT %(param_1)s::INTEGER OFFSET %(param_2)s::BIGINT]
+    [parameters: {'param_1': 50, 'param_2': 9223372036854775808}]
+    (Background on this error at: https://sqlalche.me/e/21/9h9h)
+C:\Users\Slime\Desktop\Proyecto  Nuclear- II\.venv\Lib\site-packages\psycopg\cursor.py:117: sqlalchemy.exc.DataError: (psycopg.errors.NumericValueOutOfRange) bigint out of range
+E   psycopg.errors.NumericValueOutOfRange: bigint out of range
+
+The above exception was the direct cause of the following exception:
+E   sqlalchemy.exc.DataError: (psycopg.errors.NumericValueOutOfRange) bigint out of range
+    [SQL: SELECT espacio_academico.id, espacio_academico.nombre, espacio_academico.periodo, espacio_academico.activo, espacio_academico.creado_en 
+    FROM espacio_academico ORDER BY espacio_academico.periodo DESC, espacio_academico.nombre, espacio_academico.id 
+     LIMIT %(param_1)s::INTEGER OFFSET %(param_2)s::BIGINT]
+    [parameters: {'param_1': 50, 'param_2': 9223372036854775808}]
+    (Background on this error at: https://sqlalche.me/e/21/9h9h)
+C:\Users\Slime\Desktop\Proyecto  Nuclear- II\.venv\Lib\site-packages\psycopg\cursor.py:117: sqlalchemy.exc.DataError: (psycopg.errors.NumericValueOutOfRange) bigint out of range
+E   psycopg.errors.NumericValueOutOfRange: bigint out of range
+
+The above exception was the direct cause of the following exception:
+E   sqlalchemy.exc.DataError: (psycopg.errors.NumericValueOutOfRange) bigint out of range
+    [SQL: SELECT caso_estudio.id, caso_estudio.autor_id, caso_estudio.nombre, caso_estudio.desarrollo_situacional, caso_estudio.historia, caso_estudio.tiempo_estimado_min, caso_estudio.estado, caso_estudio.creado_en, caso_estudio.actualizado_en 
+    FROM caso_estudio 
+    WHERE caso_estudio.autor_id = %(autor_id_1)s::UUID ORDER BY caso_estudio.actualizado_en DESC, caso_estudio.id 
+     LIMIT %(param_1)s::INTEGER OFFSET %(param_2)s::BIGINT]
+    [parameters: {'autor_id_1': UUID('bd25b491-b921-4fac-9b57-95fabea55e61'), 'param_1': 20, 'param_2': 9223372036854775808}]
+    (Background on this error at: https://sqlalche.me/e/21/9h9h)
+C:\Users\Slime\Desktop\Proyecto  Nuclear- II\.venv\Lib\site-packages\psycopg\cursor.py:117: sqlalchemy.exc.DataError: (psycopg.errors.NumericValueOutOfRange) bigint out of range
+E   psycopg.errors.NumericValueOutOfRange: bigint out of range
+
+The above exception was the direct cause of the following exception:
+E   sqlalchemy.exc.DataError: (psycopg.errors.NumericValueOutOfRange) bigint out of range
+    [SQL: SELECT sesion.id, sesion.caso_id, sesion.espacio_academico_id, sesion.docente_id, sesion.inicio, sesion.fin, sesion.tiempo_max_min, sesion.lugar, sesion.mensaje, sesion.estado, sesion.creada_en 
+    FROM sesion 
+    WHERE sesion.docente_id = %(docente_id_1)s::UUID ORDER BY sesion.inicio DESC, sesion.id 
+     LIMIT %(param_1)s::INTEGER OFFSET %(param_2)s::BIGINT]
+    [parameters: {'docente_id_1': UUID('315ea8eb-ed76-4574-b3a2-7ffbf6997a4a'), 'param_1': 20, 'param_2': 9223372036854775808}]
+    (Background on this error at: https://sqlalche.me/e/21/9h9h)
+C:\Users\Slime\Desktop\Proyecto  Nuclear- II\.venv\Lib\site-packages\psycopg\cursor.py:117: sqlalchemy.exc.DataError: (psycopg.errors.NumericValueOutOfRange) bigint out of range
+E   OverflowError: date value out of range
+C:\Users\Slime\Desktop\Proyecto  Nuclear- II\app\modules\sessions\schemas\__init__.py:20: OverflowError: date value out of range
+E   assert [500, 500, 500, 500, 500, 500] == [401, 401, 401, 401, 401, 429]
+      
+      At index 0 diff: 500 != 401
+      Use -v to get more diff
+C:\Users\Slime\Desktop\Proyecto  Nuclear- II\tests\integration\test_modulo_3_api.py:337: assert [500, 500, 500, 500, 500, 500] == [401, 401, 401, 401, 401, 429]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\Slime\Desktop\Proyecto  Nuclear- II\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+XFAIL tests/unit/test_modulo_3.py::test_limitador_no_acumula_memoria_por_claves_caducadas - DEF-05: el limitador conserva una entrada por cada correo/IP aunque sus fallos hayan caducado.
+XFAIL tests/integration/test_modulo_1_api.py::test_texto_con_byte_nul_es_error_de_validacion[usuario] - DEF-03: un byte NUL en un texto llega a PostgreSQL y produce HTTP 500 en vez de 422.
+XFAIL tests/integration/test_modulo_1_api.py::test_texto_con_byte_nul_es_error_de_validacion[espacio] - DEF-03: un byte NUL en un texto llega a PostgreSQL y produce HTTP 500 en vez de 422.
+FAILED tests/unit/test_modulo_3.py::test_fecha_no_representable_en_utc_es_error_de_validacion[antes-del-anio-1]
+FAILED tests/unit/test_modulo_3.py::test_fecha_no_representable_en_utc_es_error_de_validacion[despues-del-anio-9999]
+FAILED tests/unit/test_modulo_3.py::test_codigo_con_caracteres_no_ascii_es_credencial_invalida
+FAILED tests/integration/test_modulo_1_api.py::test_desplazamiento_fuera_de_rango_es_error_de_validacion[/users-admin]
+FAILED tests/integration/test_modulo_1_api.py::test_desplazamiento_fuera_de_rango_es_error_de_validacion[/academic-spaces-admin]
+FAILED tests/integration/test_modulo_1_api.py::test_desplazamiento_fuera_de_rango_es_error_de_validacion[/cases-creador]
+FAILED tests/integration/test_modulo_1_api.py::test_desplazamiento_fuera_de_rango_es_error_de_validacion[/sessions-creador]
+FAILED tests/integration/test_modulo_3_api.py::test_fecha_extrema_es_error_de_validacion
+FAILED tests/integration/test_modulo_3_api.py::test_codigo_no_ascii_es_credencial_invalida_y_cuenta_como_fallo
+9 failed, 865 passed, 3 xfailed, 1 warning in 68.86s (0:01:08)

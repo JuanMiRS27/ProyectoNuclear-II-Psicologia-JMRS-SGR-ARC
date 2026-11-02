@@ -17,7 +17,10 @@ from app.modules.sessions.models import EstadoSesionEnum
 
 
 def _a_utc(valor: datetime) -> datetime:
-    return valor.astimezone(UTC)
+    try:
+        return valor.astimezone(UTC)
+    except OverflowError as exc:  # p. ej., año 1 con desplazamiento positivo: no existe en UTC
+        raise ValueError("La fecha está fuera del rango admitido.") from exc
 
 
 # Se exige zona horaria explícita (p. ej. "2026-11-03T08:00:00-05:00"); se normaliza a UTC.

@@ -1,0 +1,52 @@
+============================= test session starts =============================
+collecting ... collected 41 items
+
+tests/integration/test_modulo_3_api.py::test_sesion_programada_expone_estado_limite_y_conteo PASSED [  2%]
+tests/integration/test_modulo_3_api.py::test_programar_sin_estudiantes_es_valido PASSED [  4%]
+tests/integration/test_modulo_3_api.py::test_caso_ajeno_no_se_puede_programar PASSED [  7%]
+tests/integration/test_modulo_3_api.py::test_espacio_desactivado_no_afecta_sesiones_existentes PASSED [  9%]
+tests/integration/test_modulo_3_api.py::test_filtro_por_estado_y_paginacion_de_sesiones PASSED [ 12%]
+tests/integration/test_modulo_3_api.py::test_listado_cuenta_solo_convocatorias_activas PASSED [ 14%]
+tests/integration/test_modulo_3_api.py::test_sesion_de_otro_docente_es_invisible PASSED [ 17%]
+tests/integration/test_modulo_3_api.py::test_sesion_inexistente[] PASSED [ 19%]
+tests/integration/test_modulo_3_api.py::test_sesion_inexistente[/start] PASSED [ 21%]
+tests/integration/test_modulo_3_api.py::test_sesion_inexistente[/finish] PASSED [ 24%]
+tests/integration/test_modulo_3_api.py::test_sesion_inexistente[/convocations] PASSED [ 26%]
+tests/integration/test_modulo_3_api.py::test_patch_vacio_no_cambia_nada PASSED [ 29%]
+tests/integration/test_modulo_3_api.py::test_cambiar_ventana_actualiza_el_limite_de_ingreso PASSED [ 31%]
+tests/integration/test_modulo_3_api.py::test_datos_informativos_se_pueden_vaciar_con_la_sesion_en_curso PASSED [ 34%]
+tests/integration/test_modulo_3_api.py::test_fecha_extrema_es_error_de_validacion PASSED [ 36%]
+tests/integration/test_modulo_3_api.py::test_caso_con_sesiones_no_se_puede_eliminar_tras_archivar PASSED [ 39%]
+tests/integration/test_modulo_3_api.py::test_sesion_no_puede_cambiarse_a_un_caso_archivado PASSED [ 41%]
+tests/integration/test_modulo_3_api.py::test_disparador_impide_cambiar_tiempo_si_el_caso_quedo_archivado PASSED [ 43%]
+tests/integration/test_modulo_3_api.py::test_convocatoria_inexistente_o_de_otra_sesion PASSED [ 46%]
+tests/integration/test_modulo_3_api.py::test_convocar_valida_el_lote_completo PASSED [ 48%]
+tests/integration/test_modulo_3_api.py::test_codigo_solo_se_entrega_sin_cache PASSED [ 51%]
+tests/integration/test_modulo_3_api.py::test_codigo_cifrado_en_la_base_y_ausente_de_los_listados PASSED [ 53%]
+tests/integration/test_modulo_3_api.py::test_codigo_danado_en_la_base_se_informa_y_se_recupera_regenerando PASSED [ 56%]
+tests/integration/test_modulo_3_api.py::test_convocatoria_revocada_rechaza_operaciones[patch-/attempts-cuerpo0] PASSED [ 58%]
+tests/integration/test_modulo_3_api.py::test_convocatoria_revocada_rechaza_operaciones[post-/regenerate-code-cuerpo1] PASSED [ 60%]
+tests/integration/test_modulo_3_api.py::test_convocatoria_revocada_rechaza_operaciones[get-/code-None] PASSED [ 63%]
+tests/integration/test_modulo_3_api.py::test_convocatoria_revocada_rechaza_operaciones[delete--None] PASSED [ 65%]
+tests/integration/test_modulo_3_api.py::test_intentos_no_pueden_disminuir_por_api PASSED [ 68%]
+tests/integration/test_modulo_3_api.py::test_gestion_de_sesiones_solo_para_docentes[anonimo] PASSED [ 70%]
+tests/integration/test_modulo_3_api.py::test_gestion_de_sesiones_solo_para_docentes[admin] PASSED [ 73%]
+tests/integration/test_modulo_3_api.py::test_gestion_de_sesiones_solo_para_docentes[estudiante] PASSED [ 75%]
+tests/integration/test_modulo_3_api.py::test_ingreso_devuelve_alcance_y_evita_cache PASSED [ 78%]
+tests/integration/test_modulo_3_api.py::test_estudiante_consulta_su_sesion_sin_ver_datos_ajenos PASSED [ 80%]
+tests/integration/test_modulo_3_api.py::test_indicador_de_inicio_cambia_al_cerrar_la_ventana PASSED [ 82%]
+tests/integration/test_modulo_3_api.py::test_estudiante_de_dos_sesiones_entra_a_cada_una_con_su_codigo PASSED [ 85%]
+tests/integration/test_modulo_3_api.py::test_login_bloqueado_informa_retry_after PASSED [ 87%]
+tests/integration/test_modulo_3_api.py::test_codigo_no_ascii_es_credencial_invalida_y_cuenta_como_fallo PASSED [ 90%]
+tests/integration/test_modulo_3_api.py::test_correo_invalido_en_login_estudiantil PASSED [ 92%]
+tests/integration/test_modulo_3_api.py::test_ingreso_sin_token_a_rutas_estudiantiles PASSED [ 95%]
+tests/integration/test_modulo_3_api.py::test_cierre_de_sesion_revoca_tokens_y_persiste PASSED [ 97%]
+tests/integration/test_modulo_3_api.py::test_cierre_automatico_tras_el_plazo_mediante_worker PASSED [100%]
+
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\Slime\Desktop\Proyecto  Nuclear- II\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 41 passed, 1 warning in 13.97s ========================

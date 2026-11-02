@@ -5,11 +5,15 @@ registrado en `main.py` las convierte en JSON con el código HTTP adecuado.
 Los módulos posteriores pueden reutilizarlas directamente.
 """
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DataError
+
+logger = logging.getLogger("inter_nos.errores")
 
 
 class AppError(Exception):
@@ -62,5 +66,16 @@ async def _app_error_handler(_: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content=content, headers=headers or None)
 
 
+async def _data_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    """PostgreSQL rechazó un valor que los esquemas no filtran (p. ej., un byte NUL en un texto)."""
+    assert isinstance(exc, DataError)
+    # Solo el tipo: el mensaje de SQLAlchemy incluye la consulta y sus parámetros.
+    logger.warning("valor rechazado por la base de datos: %s", type(exc.orig).__name__)
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": "Los datos contienen valores no admitidos."}
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AppError, _app_error_handler)
+    app.add_exception_handler(DataError, _data_error_handler)
