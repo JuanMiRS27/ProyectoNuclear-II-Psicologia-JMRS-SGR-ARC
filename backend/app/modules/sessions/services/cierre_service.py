@@ -9,7 +9,7 @@ from app.modules.sessions import eventos, integracion
 from app.modules.sessions.services.base import ServicioSesionesBase
 from app.modules.sessions.states import CicloVidaSesion
 
-logger = logging.getLogger("iter_animi.sesiones.cierre")
+logger = logging.getLogger("inter_nos.sesiones.cierre")
 
 TAMANO_LOTE = 500
 

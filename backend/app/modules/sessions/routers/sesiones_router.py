@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 
+from app.core.database import OFFSET_MAXIMO
 from app.modules.auth.dependencies import DocenteUser
 from app.modules.auth.schemas import MessageResponse
 from app.modules.sessions.dependencies import ConvocatoriaServiceDep, SesionServiceDep
@@ -64,7 +65,7 @@ def list_sessions(
     docente: DocenteUser,
     service: SesionServiceDep,
     estado: EstadoSesionEnum | None = None,
-    skip: Annotated[int, Query(ge=0)] = 0,
+    skip: Annotated[int, Query(ge=0, le=OFFSET_MAXIMO)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> SesionList:
     sesiones, total, conteos = service.listar(docente, estado=estado, skip=skip, limit=limit)

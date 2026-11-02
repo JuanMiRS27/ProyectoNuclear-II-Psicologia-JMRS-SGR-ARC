@@ -12,7 +12,7 @@ from app.core.clock import Reloj, RelojSistema
 from app.core.database import SessionLocal
 from app.modules.participations.services import ExpiracionParticipacionesService
 
-logger = logging.getLogger("iter_animi.workers.participation_expiration")
+logger = logging.getLogger("inter_nos.workers.participation_expiration")
 
 
 def ejecutar_una_vez(session_factory: Callable[[], Session] = SessionLocal, reloj: Reloj | None = None) -> list[uuid.UUID]:

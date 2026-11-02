@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
+from app.core.database import OFFSET_MAXIMO
 from app.modules.auth.dependencies import AdminUser, get_usuario_service, require_admin
 from app.modules.auth.models import RolUsuario
 from app.modules.auth.schemas import (
@@ -61,7 +62,7 @@ def list_users(
     service: UsuarioServiceDep,
     rol: RolUsuario | None = None,
     activo: bool | None = None,
-    skip: Annotated[int, Query(ge=0)] = 0,
+    skip: Annotated[int, Query(ge=0, le=OFFSET_MAXIMO)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> UsuarioList:
     usuarios, total = service.list(rol=rol, activo=activo, skip=skip, limit=limit)

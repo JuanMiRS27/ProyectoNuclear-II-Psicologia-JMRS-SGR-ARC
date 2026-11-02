@@ -16,7 +16,7 @@ from app.modules.sessions.security.codigos import generar_codigo
 from app.modules.sessions.services.base import ServicioSesionesBase
 from app.modules.sessions.states import CicloVidaSesion
 
-logger = logging.getLogger("iter_animi.sesiones")
+logger = logging.getLogger("inter_nos.sesiones")
 
 INTENTOS_GENERACION_CODIGO = 5
 CAMPOS_OBLIGATORIOS = ("caso_id", "espacio_academico_id", "inicio", "fin", "tiempo_max_min")

@@ -3,7 +3,8 @@
 Cuenta FALLOS por correo y por dirección IP. Superado el límite, la clave queda
 bloqueada hasta que los fallos salgan de la ventana, incluso si después se envía
 el código correcto (si no, el bloqueo no impediría la adivinación). Un ingreso
-correcto limpia los fallos de ese correo.
+correcto limpia los fallos de ese correo. Las claves sin fallos vigentes se eliminan,
+como máximo una pasada por ventana, para que la memoria no crezca indefinidamente.
 
 Limitación conocida: el estado vive en el proceso. Con varios workers de Uvicorn o
 varias réplicas, cada uno lleva su propia cuenta; para producción distribuida debe
@@ -37,11 +38,13 @@ class LimitadorIntentos:
         self._limites = {"correo": max_por_correo, "ip": max_por_ip}
         self._fallos: dict[tuple[str, str], deque[datetime]] = defaultdict(deque)
         self._lock = threading.Lock()
+        self._proxima_limpieza: datetime | None = None
 
     def verificar(self, correo: str, ip: str) -> None:
         """Lanza `DemasiadosIntentosError` si el correo o la IP están bloqueados."""
         ahora = self._reloj.ahora()
         with self._lock:
+            self._limpiar_caducadas(ahora)
             esperas = [
                 self._espera((tipo, valor), ahora)
                 for tipo, valor in (("correo", correo), ("ip", ip))
@@ -53,6 +56,7 @@ class LimitadorIntentos:
     def registrar_fallo(self, correo: str, ip: str) -> None:
         ahora = self._reloj.ahora()
         with self._lock:
+            self._limpiar_caducadas(ahora)
             for clave in (("correo", correo), ("ip", ip)):
                 self._purgar(clave, ahora)
                 self._fallos[clave].append(ahora)
@@ -66,14 +70,26 @@ class LimitadorIntentos:
             self._fallos.clear()
 
     def _purgar(self, clave: tuple[str, str], ahora: datetime) -> None:
-        cola = self._fallos[clave]
+        cola = self._fallos.get(clave)
+        if cola is None:
+            return
         while cola and cola[0] <= ahora - self._ventana:
             cola.popleft()
+        if not cola:
+            del self._fallos[clave]
+
+    def _limpiar_caducadas(self, ahora: datetime) -> None:
+        if self._proxima_limpieza is not None and ahora < self._proxima_limpieza:
+            return
+        self._proxima_limpieza = ahora + self._ventana
+        limite = ahora - self._ventana
+        for clave in [c for c, cola in self._fallos.items() if cola[-1] <= limite]:
+            del self._fallos[clave]
 
     def _espera(self, clave: tuple[str, str], ahora: datetime) -> int:
         self._purgar(clave, ahora)
-        cola = self._fallos[clave]
-        if len(cola) < self._limites[clave[0]]:
+        cola = self._fallos.get(clave)
+        if cola is None or len(cola) < self._limites[clave[0]]:
             return 0
         # Se desbloquea cuando sale de la ventana el fallo que hace superar el límite.
         liberacion = cola[-self._limites[clave[0]]] + self._ventana

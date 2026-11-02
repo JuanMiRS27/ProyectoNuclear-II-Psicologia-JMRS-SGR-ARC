@@ -17,6 +17,10 @@ NAMING_CONVENTION = {
 }
 
 
+# OFFSET de PostgreSQL es bigint: un valor mayor se rechaza en la API en lugar de fallar en la consulta.
+OFFSET_MAXIMO = 2**63 - 1
+
+
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 

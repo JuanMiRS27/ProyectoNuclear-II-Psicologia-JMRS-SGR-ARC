@@ -1,0 +1,132 @@
+........................................................................ [ 10%]
+........................................................................ [ 21%]
+........................................................................ [ 31%]
+........................................................................ [ 42%]
+........................................................................ [ 52%]
+........................................................................ [ 63%]
+........................................................................ [ 74%]
+........................................................................ [ 84%]
+........................................................................ [ 95%]
+................................                                         [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\Slime\Desktop\Proyecto  Nuclear- II\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.8-final-0 _______________
+
+Name                                                           Stmts   Miss Branch BrPart  Cover
+------------------------------------------------------------------------------------------------
+app\__init__.py                                                    0      0      0      0   100%
+app\bootstrap.py                                                   4      0      0      0   100%
+app\core\__init__.py                                               0      0      0      0   100%
+app\core\clock.py                                                  9      0      0      0   100%
+app\core\config.py                                                37      0      2      0   100%
+app\core\database.py                                              16      0      0      0   100%
+app\core\exceptions.py                                            46      0      2      0   100%
+app\core\security.py                                              50      0      4      0   100%
+app\main.py                                                       22      1      0      0    95%
+app\modules\__init__.py                                            0      0      0      0   100%
+app\modules\auth\__init__.py                                       0      0      0      0   100%
+app\modules\auth\dependencies\__init__.py                          2      0      0      0   100%
+app\modules\auth\dependencies\auth.py                             38      2      6      0    95%
+app\modules\auth\models\__init__.py                                2      0      0      0   100%
+app\modules\auth\models\usuario.py                                31      0      0      0   100%
+app\modules\auth\repositories\__init__.py                          2      0      0      0   100%
+app\modules\auth\repositories\usuario_repository.py               43     16      8      2    57%
+app\modules\auth\routers\__init__.py                               7      0      0      0   100%
+app\modules\auth\routers\auth_router.py                           18      4      0      0    78%
+app\modules\auth\routers\users_router.py                          33      8      0      0    76%
+app\modules\auth\schemas\__init__.py                               3      0      0      0   100%
+app\modules\auth\schemas\auth.py                                  12      0      0      0   100%
+app\modules\auth\schemas\usuario.py                               31      0      0      0   100%
+app\modules\auth\services\__init__.py                              3      0      0      0   100%
+app\modules\auth\services\auth_service.py                         45      0     12      0   100%
+app\modules\auth\services\usuario_service.py                     100      1     28      0    99%
+app\modules\cases\__init__.py                                      0      0      0      0   100%
+app\modules\cases\builders\__init__.py                             3      0      0      0   100%
+app\modules\cases\builders\constructor.py                         97      0     22      0   100%
+app\modules\cases\builders\director.py                            23      0     10      0   100%
+app\modules\cases\dependencies\__init__.py                        23      5      0      0    78%
+app\modules\cases\dsl\__init__.py                                  3      0      0      0   100%
+app\modules\cases\dsl\exporter.py                                 17      0      6      0   100%
+app\modules\cases\dsl\schema.py                                   49      0      4      0   100%
+app\modules\cases\models\__init__.py                               2      0      0      0   100%
+app\modules\cases\models\caso.py                                  96      0      6      0   100%
+app\modules\cases\repositories\__init__.py                         3      0      0      0   100%
+app\modules\cases\repositories\caso_repository.py                 30     18      6      0    33%
+app\modules\cases\repositories\contenido_repository.py            56     31      2      0    43%
+app\modules\cases\routers\__init__.py                              9      0      0      0   100%
+app\modules\cases\routers\casos_router.py                         42     12      0      0    71%
+app\modules\cases\routers\common.py                               10      0      0      0   100%
+app\modules\cases\routers\contenido_router.py                     63     20      0      0    68%
+app\modules\cases\routers\rubrica_router.py                       28      8      0      0    71%
+app\modules\cases\schemas\__init__.py                              4      0      0      0   100%
+app\modules\cases\schemas\common.py                               23      0      0      0   100%
+app\modules\cases\schemas\contenido.py                            65      0      2      0   100%
+app\modules\cases\schemas\validacion.py                            8      0      0      0   100%
+app\modules\cases\services\__init__.py                             4      0      0      0   100%
+app\modules\cases\services\base.py                                57      0      8      0   100%
+app\modules\cases\services\caso_service.py                        54     16      4      0    72%
+app\modules\cases\services\contenido_service.py                  146     39     28      3    74%
+app\modules\cases\services\rubrica_service.py                     62      4     16      0    95%
+app\modules\cases\states\__init__.py                               2      0      0      0   100%
+app\modules\cases\states\estados.py                               71      1      2      0    99%
+app\modules\cases\validators\__init__.py                           3      0      0      0   100%
+app\modules\cases\validators\cadena.py                           136      0     68      0   100%
+app\modules\cases\validators\resultado.py                         15      0      0      0   100%
+app\modules\participations\__init__.py                             0      0      0      0   100%
+app\modules\participations\dependencies\__init__.py               20      3      2      1    82%
+app\modules\participations\models\__init__.py                      2      0      0      0   100%
+app\modules\participations\models\participacion.py                47      0      0      0   100%
+app\modules\participations\policies\__init__.py                    0      0      0      0   100%
+app\modules\participations\policies\integracion_sesiones.py       29      0      6      0   100%
+app\modules\participations\policies\temporizador.py               27      0      8      0   100%
+app\modules\participations\repositories\__init__.py               84     45      0      0    46%
+app\modules\participations\routers\__init__.py                    41     14      0      0    66%
+app\modules\participations\schemas\__init__.py                    21      0      0      0   100%
+app\modules\participations\services\__init__.py                    5      0      0      0   100%
+app\modules\participations\services\base.py                       65      0     12      0   100%
+app\modules\participations\services\consulta_evaluacion.py        37      5      2      0    87%
+app\modules\participations\services\expiracion_service.py         21      0      6      0   100%
+app\modules\participations\services\participacion_service.py      57      0      8      0   100%
+app\modules\participations\services\respuesta_service.py          46      0     14      1    98%
+app\modules\sessions\__init__.py                                   0      0      0      0   100%
+app\modules\sessions\dependencies\__init__.py                     35      8      2      0    73%
+app\modules\sessions\eventos.py                                   23      0      0      0   100%
+app\modules\sessions\integracion.py                               24      0      4      1    96%
+app\modules\sessions\models\__init__.py                            2      0      0      0   100%
+app\modules\sessions\models\sesion.py                             63      0      0      0   100%
+app\modules\sessions\repositories\__init__.py                     95     54     14      0    38%
+app\modules\sessions\routers\__init__.py                           9      0      0      0   100%
+app\modules\sessions\routers\espacios_router.py                   27      6      0      0    78%
+app\modules\sessions\routers\estudiante_router.py                 15      5      0      0    67%
+app\modules\sessions\routers\sesiones_router.py                   67     21      0      0    69%
+app\modules\sessions\schemas\__init__.py                          76      0      4      0   100%
+app\modules\sessions\security\__init__.py                          5      0      0      0   100%
+app\modules\sessions\security\cifrado.py                          26      0      2      0   100%
+app\modules\sessions\security\codigos.py                          10      0      0      0   100%
+app\modules\sessions\security\limitador.py                        71      0     18      0   100%
+app\modules\sessions\security\tokens.py                           16      0      0      0   100%
+app\modules\sessions\services\__init__.py                          5      0      0      0   100%
+app\modules\sessions\services\acceso_service.py                   87      0     20      0   100%
+app\modules\sessions\services\base.py                             57      0      8      0   100%
+app\modules\sessions\services\cierre_service.py                   28      0      6      0   100%
+app\modules\sessions\services\espacio_service.py                  46      0     12      0   100%
+app\modules\sessions\services\sesion_service.py                  209     22     52      3    90%
+app\modules\sessions\states\__init__.py                            2      0      0      0   100%
+app\modules\sessions\states\estados.py                           106      1     16      0    99%
+app\scripts\__init__.py                                            0      0      0      0   100%
+app\scripts\create_admin.py                                       42      0      8      0   100%
+app\workers\__init__.py                                            0      0      0      0   100%
+app\workers\participation_expiration\__init__.py                   2      0      0      0   100%
+app\workers\participation_expiration\__main__.py                  12      0      2      0   100%
+app\workers\participation_expiration\runner.py                    23      0      0      0   100%
+app\workers\session_expiration\__init__.py                         2      0      0      0   100%
+app\workers\session_expiration\__main__.py                        12      0      2      0   100%
+app\workers\session_expiration\runner.py                          24      0      0      0   100%
+------------------------------------------------------------------------------------------------
+TOTAL                                                           3481    370    474     11    90%
+680 passed, 1 warning in 6.14s
