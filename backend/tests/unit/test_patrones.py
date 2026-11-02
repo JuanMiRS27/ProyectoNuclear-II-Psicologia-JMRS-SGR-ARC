@@ -715,7 +715,7 @@ def test_modulo_3_no_importa_al_modulo_4():
 def test_publicador_nulo_registra_sin_enviar(caplog):
     evento = eventos.EventoSesion(eventos.SESION_INICIADA, uuid.uuid4(), {"origen": "docente"})
 
-    with caplog.at_level(logging.INFO, logger="iter_animi.sesiones.eventos"):
+    with caplog.at_level(logging.INFO, logger="inter_nos.sesiones.eventos"):
         assert eventos.PublicadorNulo().publicar(evento) is None
 
     assert "SESION_INICIADA" in caplog.text

@@ -735,7 +735,7 @@ def test_pasada_del_worker_de_expiracion(caplog):
     with (
         patch.object(worker, "configurar_integraciones") as configurar,
         patch.object(worker, "ExpiracionParticipacionesService") as servicio,
-        caplog.at_level(logging.INFO, logger="iter_animi.workers.participation_expiration"),
+        caplog.at_level(logging.INFO, logger="inter_nos.workers.participation_expiration"),
     ):
         servicio.return_value.expirar_vencidas.return_value = [uuid.uuid4(), uuid.uuid4()]
         resultado = worker.ejecutar_una_vez(fabrica)

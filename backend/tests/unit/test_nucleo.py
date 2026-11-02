@@ -98,7 +98,7 @@ def test_manejador_respeta_cabeceras_propias_del_error():
 def test_error_de_datos_responde_422_sin_revelar_la_consulta(caplog):
     error = DataError("INSERT INTO usuario VALUES (%(clave)s)", {"clave": "secreto"}, ValueError("NUL"))
 
-    with caplog.at_level(logging.WARNING, logger="iter_animi.errores"):
+    with caplog.at_level(logging.WARNING, logger="inter_nos.errores"):
         respuesta = asyncio.run(exceptions._data_error_handler(MagicMock(), error))
 
     assert respuesta.status_code == 422

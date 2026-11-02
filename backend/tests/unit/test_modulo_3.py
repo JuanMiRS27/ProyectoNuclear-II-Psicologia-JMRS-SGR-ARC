@@ -812,7 +812,7 @@ def test_codigo_de_convocatoria_revocada_no_se_entrega():
 def test_codigo_consultado_se_registra_sin_revelarlo(caplog):
     servicio, _, actual, conv = _gestor()
 
-    with caplog.at_level(logging.INFO, logger="iter_animi.sesiones"):
+    with caplog.at_level(logging.INFO, logger="inter_nos.sesiones"):
         leido = servicio.obtener_codigo(usuario(), actual.id, conv.id)
 
     assert leido.codigo_autorizacion == CODIGO
@@ -958,7 +958,7 @@ def test_cifrado_danado_nunca_coincide(caplog):
     conv.codigo_autorizacion = "v1.dañado"
     servicio._convocatorias.de_estudiante_por_correo.return_value = [conv]
 
-    with caplog.at_level(logging.ERROR, logger="iter_animi.sesiones.acceso"):
+    with caplog.at_level(logging.ERROR, logger="inter_nos.sesiones.acceso"):
         with pytest.raises(AuthenticationError):
             servicio.ingresar(CORREO, CODIGO, "10.0.0.1", _limitador_doble())
 

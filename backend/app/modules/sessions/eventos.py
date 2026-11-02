@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Protocol
 
-logger = logging.getLogger("iter_animi.sesiones.eventos")
+logger = logging.getLogger("inter_nos.sesiones.eventos")
 
 
 @dataclass(frozen=True, slots=True)

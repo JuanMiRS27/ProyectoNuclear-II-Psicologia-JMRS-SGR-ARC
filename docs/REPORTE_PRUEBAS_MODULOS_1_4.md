@@ -1,6 +1,6 @@
 # Reporte de pruebas — Módulos 1 a 4
 
-**Proyecto:** Proyecto Nuclear II — Iter Animi, simulador académico de casos de psicología social
+**Proyecto:** Proyecto Nuclear II — Inter Nos, simulador académico de casos de psicología social
 **Ejecución registrada:** 1 de noviembre de 2026, rama `main`, sobre el commit `cb5c2c9` más los cambios de esta entrega, aún sin confirmar
 **Evidencias:** carpeta [`docs/evidencias/`](evidencias/)
 **Rutas:** el código está en `backend/`; las rutas `app/...` y `tests/...` de este reporte son relativas a esa carpeta.
@@ -291,7 +291,7 @@ Tome estas capturas después de ejecutar los comandos de reproducción. Las vers
 
 | # | Captura | Comando o ubicación | Qué debe verse |
 |---:|---|---|---|
-| 1 | Contenedor de pruebas | `docker ps` | `iter_animi_pg_test` con `postgres:17-alpine` |
+| 1 | Contenedor de pruebas | `docker ps` | `inter_nos_pg_test` con `postgres:17-alpine` |
 | 2 | Suite completa | `pytest -q` | Línea final `1343 passed` |
 | 3 | Regresión de un defecto | `pytest tests/integration/test_modulo_1_api.py -k byte_nul -v` | Las pruebas de DEF-03 aprobadas |
 | 4 | Cobertura en terminal | `pytest --cov=app --cov-report=term-missing` | Tabla por archivo y línea `TOTAL` |
@@ -314,7 +314,7 @@ En PowerShell, desde la carpeta `backend/`:
 .venv\Scripts\activate
 pip install -r requirements.txt
 docker desktop start
-docker run -d --rm --name iter_animi_pg_test -e POSTGRES_USER=simulador_test -e POSTGRES_PASSWORD=solo_pruebas_local -e POSTGRES_DB=simulador_psicologia_test -p 127.0.0.1:55432:5432 --tmpfs /var/lib/postgresql/data postgres:17-alpine
+docker run -d --rm --name inter_nos_pg_test -e POSTGRES_USER=simulador_test -e POSTGRES_PASSWORD=solo_pruebas_local -e POSTGRES_DB=simulador_psicologia_test -p 127.0.0.1:55432:5432 --tmpfs /var/lib/postgresql/data postgres:17-alpine
 $env:TEST_DATABASE_URL = "postgresql+psycopg://simulador_test:solo_pruebas_local@127.0.0.1:55432/simulador_psicologia_test"
 $env:DATABASE_URL = "postgresql+psycopg://simulador_test:solo_pruebas_local@127.0.0.1:55432/no_usada_dev"
 pytest --cov=app --cov-report=term-missing --cov-report=html
@@ -332,7 +332,7 @@ pytest tests/unit
 Para detener el contenedor, que no conserva datos:
 
 ```powershell
-docker stop iter_animi_pg_test
+docker stop inter_nos_pg_test
 ```
 
 ## J. Conclusiones

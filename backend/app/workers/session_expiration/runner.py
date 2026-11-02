@@ -13,7 +13,7 @@ from app.core.clock import Reloj, RelojSistema
 from app.core.database import SessionLocal
 from app.modules.sessions.services import CierreSesionesService
 
-logger = logging.getLogger("iter_animi.workers.session_expiration")
+logger = logging.getLogger("inter_nos.workers.session_expiration")
 
 
 def ejecutar_una_vez(

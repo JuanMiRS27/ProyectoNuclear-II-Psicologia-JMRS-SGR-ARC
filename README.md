@@ -1,4 +1,4 @@
-# Iter Animi — Simulador de Psicología Social (Backend)
+# Inter Nos — Simulador de Psicología Social (Backend)
 
 Monolito modular en **FastAPI + PostgreSQL**. Estado actual: módulos **1 — Autenticación y Usuarios**, **2 — Gestión de Casos Académicos** y **3 — Sesiones y Convocatorias**, y **4 — Participaciones**.
 
@@ -144,7 +144,7 @@ pytest --cov=app --cov-report=term-missing --cov-report=html                  # 
 Si no hay PostgreSQL local, se puede usar un contenedor desechable (sin persistencia y accesible solo desde este equipo):
 
 ```powershell
-docker run -d --rm --name iter_animi_pg_test -e POSTGRES_USER=simulador_test -e POSTGRES_PASSWORD=solo_pruebas_local -e POSTGRES_DB=simulador_psicologia_test -p 127.0.0.1:55432:5432 --tmpfs /var/lib/postgresql/data postgres:17-alpine
+docker run -d --rm --name inter_nos_pg_test -e POSTGRES_USER=simulador_test -e POSTGRES_PASSWORD=solo_pruebas_local -e POSTGRES_DB=simulador_psicologia_test -p 127.0.0.1:55432:5432 --tmpfs /var/lib/postgresql/data postgres:17-alpine
 $env:TEST_DATABASE_URL = "postgresql+psycopg://simulador_test:solo_pruebas_local@127.0.0.1:55432/simulador_psicologia_test"
 ```
 

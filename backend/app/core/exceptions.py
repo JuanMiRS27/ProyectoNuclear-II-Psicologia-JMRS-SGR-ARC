@@ -13,7 +13,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DataError
 
-logger = logging.getLogger("iter_animi.errores")
+logger = logging.getLogger("inter_nos.errores")
 
 
 class AppError(Exception):

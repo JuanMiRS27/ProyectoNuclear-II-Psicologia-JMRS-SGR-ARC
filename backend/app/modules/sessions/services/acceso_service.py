@@ -24,7 +24,7 @@ from app.modules.sessions.security import (
 from app.modules.sessions.services.base import ServicioSesionesBase
 from app.modules.sessions.states import CicloVidaSesion, IngresoNoPermitidoError
 
-logger = logging.getLogger("iter_animi.sesiones.acceso")
+logger = logging.getLogger("inter_nos.sesiones.acceso")
 
 # Mismo mensaje para correo inexistente, usuario no estudiante y código incorrecto o de otra persona.
 CREDENCIALES_INVALIDAS = "Correo o código de acceso incorrectos."
